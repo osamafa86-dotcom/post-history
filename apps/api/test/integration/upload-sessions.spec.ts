@@ -66,6 +66,18 @@ describe('upload sessions: list mine and cancel (GET /uploads, DELETE /uploads/{
       expect(res.body.next_cursor).toBeNull();
     });
 
+    it('leaves out an unfinished session whose time ran out, and keeps a completed one of the same age', async () => {
+      const live = await seedUploadSession(h, mine.id, { state: 'created' });
+      const stale = await seedUploadSession(h, mine.id, { state: 'created', expiresInSeconds: -60 });
+      const staleInProgress = await seedUploadSession(h, mine.id, { state: 'in_progress', expiresInSeconds: -60 });
+      const completed = await seedUploadSession(h, mine.id, { state: 'completed', expiresInSeconds: -60 });
+      const listed = ids((await list(mine).expect(200)).body);
+      expect(listed).toEqual(expect.arrayContaining([live.id, completed.id]));
+      expect(listed).not.toContain(stale.id);
+      expect(listed).not.toContain(staleInProgress.id);
+      expect(ids((await list(mine, '?state=created').expect(200)).body)).not.toContain(stale.id);
+    });
+
     it('filters by state and by material, and pages with the cursor without gaps', async () => {
       const filtered = await loginAs(h, [{ role: 'reporter' }]);
       const sessions: Array<Awaited<ReturnType<typeof seedUploadSession>>> = [];

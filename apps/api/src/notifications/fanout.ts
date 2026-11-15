@@ -30,6 +30,10 @@ const RULES: Record<string, { audience: Audience; assignment: boolean; push: boo
   'material.change_requested': { audience: 'reporter', assignment: false, push: true },
   'material.accepted_for_production': { audience: 'producers', assignment: true, push: false },
   'material.published': { audience: 'reporter', assignment: false, push: true },
+  // قرار المشرف يصل صاحب المادة، وإعادة إرسالها بعد طلب التعديل تصل مشرفي مكتبها خبرًا لا مهمة (ADR 0121)
+  'material.rejected': { audience: 'reporter', assignment: false, push: true },
+  'material.accepted': { audience: 'reporter', assignment: false, push: true },
+  'material.resubmitted': { audience: 'supervisors', assignment: false, push: true },
   // إشعار الاستلام: يصل حين يتحقق الأصل ويصدر رقم الإيصال
   'upload.verified': { audience: 'reporter', assignment: false, push: true },
   // التصعيد يصل المستخدم المسمّى في الحدث؛ لا يُصعَّد هو نفسه (السلسلة تتقدم على الإشعار الأصلي)

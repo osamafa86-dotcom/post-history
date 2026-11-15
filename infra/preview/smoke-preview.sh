@@ -317,6 +317,8 @@ const req = (method, path, headers = {}, body) => new Promise((resolve) => {
 const page = await req("GET", "/ar/login");
 if (!/noindex/.test(page.headers["x-robots-tag"] ?? "")) die(`no X-Robots-Tag on a page (${page.status})`);
 if (!page.body.includes("Preview: test data and accounts only")) die(`no preview banner in the page (${page.status})`);
+// Under 768px the web has a fixed bottom navigation bar: the banner must not sit fixed over it (it covered every destination).
+if (!page.body.includes("@media (max-width:767px){#ph-preview-note{position:static")) die("the preview banner stays fixed on a phone, over the bottom navigation");
 say("noindex header and preview banner on the page: ok");
 if (!(await req("GET", "/robots.txt")).body.includes("Disallow: /")) die("robots.txt does not disallow");
 const font = await req("GET", "/fonts/Rubik-Bold.woff2");

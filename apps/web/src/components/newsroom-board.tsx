@@ -11,6 +11,7 @@ import { arrange, fetchCap, loadBoard, type BoardData } from "@/lib/board-load";
 import { internalNames } from "@/lib/work-name";
 import { hasRole } from "@/lib/review";
 import { useUser } from "./session-boundary";
+import { untilVisible } from "@/lib/visibility";
 
 // أربعة أعمدة كما في Figma 193:862: واردة / قيد التحقق / جاهزة للنشر / متوقفة؛ تجميعها من الحالتين التحريرية والفنية في lib/board-columns.ts.
 const cardLimit = 20;
@@ -29,13 +30,15 @@ export function NewsroomBoard({ locale }: { locale: Locale }) {
   useEffect(() => {
     if (!allowed) return;
     const controller = new AbortController(); let disposed = false, fast: ReturnType<typeof setTimeout>, slow: ReturnType<typeof setTimeout>;
-    // اللقطة كل 5 ثوانٍ (حدّ حداثتها في العقد)، وبطاقات الأعمدة كل 15 ثانية؛ الاستطلاع تسلسلي ويتوقف عند إخفاء التبويب.
+    // اللقطة كل 5 ثوانٍ (حدّ حداثتها في العقد)، وبطاقات الأعمدة كل 15 ثانية؛ الاستطلاع تسلسلي، وينتظر والتبويب مخفي ثم يكمل عند ظهوره.
     async function pollSnapshot() {
+      await untilVisible(controller.signal); if (controller.signal.aborted) return;
       try { const data = dataOrThrow(await browserApi().GET("/dashboard/newsroom", { signal: controller.signal })); if (!disposed) { setSnapshot(data); setNow(Date.now()); setError(false); } }
       catch { if (!disposed && !controller.signal.aborted) setError(true); }
       finally { if (!disposed) fast = setTimeout(pollSnapshot, 5000); }
     }
     async function pollCards() {
+      await untilVisible(controller.signal); if (controller.signal.aborted) return;
       try {
         const data = await loadBoard(controller.signal, cardLimit);
         if (!disposed) setLoaded(data);

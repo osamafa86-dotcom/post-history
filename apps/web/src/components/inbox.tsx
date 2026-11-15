@@ -1,4 +1,5 @@
 "use client";
+import { governorateName } from "@/lib/format";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -12,7 +13,7 @@ import { photographer, StateBadge, type StateTrack } from "./states";
 import { Icon } from "./icon";
 import { EmptyState, ErrorState, NoAccess } from "./empty-state";
 import { useInboxBadge, useShellSearch } from "./app-shell";
-import { activeTab, inboxTabs, isOpenUrgent, matchesSearch, matchesType, rowThumb, tabCounts, tabQuery, type InboxTab } from "@/lib/inbox-tabs";
+import { activeTab, isOpenUrgent, matchesSearch, matchesType, rowThumb, tabCounts, tabQuery, tabsFor, type InboxTab } from "@/lib/inbox-tabs";
 import { urgentUnacknowledged } from "@/lib/editor";
 import { hasRole, materialReaders, transitionOptions } from "@/lib/review";
 import { useMutation } from "@/lib/use-mutation";
@@ -20,13 +21,14 @@ import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
 import { InboxNow } from "./newsroom-board";
 import { AssignButton } from "./task-parts";
+import { untilVisible } from "@/lib/visibility";
 
 const dashboardRoles = ["supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin"] as const;
-const filterKeys = ["priority", "technical_state", "editorial_state", "rights_state", "governorate", "reporter_id", "shot_after", "shot_before"] as const;
+const filterKeys = ["priority", "technical_state", "editorial_state", "rights_state", "governorate", "shot_after", "shot_before"] as const;
 type FilterKey = (typeof filterKeys)[number];
 type Messages = (typeof messages)[Locale];
 
-type Sort = "shot_at" | "governorate" | "reporter_id" | StateTrack;
+type Sort = "shot_at" | "governorate" | StateTrack;
 /**
  * العاجل الذي لم يُستلم في نطاق المستخدم كله، لا في الصفحة المحمّلة: هو الاستعلام نفسه الذي يصدره زر «عرض العاجل»، فيطابق عدّ الشريط والمؤشّر ما يعرضه الزر.
  * `urgent_open` في اللقطة عدّ آخر (العاجل الذي لم يُنشر ولم يُرفض، ومنه المستلَم)، وله اسمه: تبويب «عاجلة» وشارة الشريط الجانبي.
@@ -51,7 +53,7 @@ export function Inbox({ locale }: { locale: Locale }) {
   useEffect(() => {
     if (!staff) return;
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
-    async function poll() { try { const data = dataOrThrow(await browserApi().GET("/dashboard/newsroom", { signal: controller.signal })); if (!controller.signal.aborted) { setSnapshot(data); setBadge(data.urgent_open); } } catch { /* الإحصاءات تبقى بآخر قيمة */ } finally { if (!controller.signal.aborted) timer = setTimeout(poll, 5000); } }
+    async function poll() { await untilVisible(controller.signal); if (controller.signal.aborted) return; try { const data = dataOrThrow(await browserApi().GET("/dashboard/newsroom", { signal: controller.signal })); if (!controller.signal.aborted) { setSnapshot(data); setBadge(data.urgent_open); } } catch { /* الإحصاءات تبقى بآخر قيمة */ } finally { if (!controller.signal.aborted) timer = setTimeout(poll, 5000); } }
     void poll(); return () => { controller.abort(); clearTimeout(timer); };
   }, [staff, refresh, setBadge]);
   useEffect(() => { const tick = () => setNow(Date.now()); tick(); const timer = setInterval(tick, 1000); return () => clearInterval(timer); }, []);
@@ -59,6 +61,7 @@ export function Inbox({ locale }: { locale: Locale }) {
     if (!reader) return;
     const controller = new AbortController(); let disposed = false, stopped = false, timer: ReturnType<typeof setTimeout>;
     async function poll() {
+      await untilVisible(controller.signal); if (controller.signal.aborted) return;
       if (!navigator.onLine) { setOffline(true); timer = setTimeout(poll, 15000); return; }
       try {
         // الاستطلاع تسلسلي؛ لا تتراكم طلبات عند البطء ولا تُحفظ حمولة الإشعار في الواجهة.
@@ -134,15 +137,15 @@ export function Inbox({ locale }: { locale: Locale }) {
       <article className={`kpi${snapshot.overdue_acknowledgements ? " attention" : ""}`}><strong dir="ltr">{snapshot.overdue_acknowledgements}</strong><span>{m.editor.overdue}</span></article></>}</div>
     : <div className="kpis three inbox-kpis"><article className="kpi"><strong dir="ltr">{page?.items.length ?? "—"}</strong><span>{m.visibleCount}</span></article><article className="kpi"><strong dir="ltr">{page?.items.filter(x => x.technical_state === "pending").length ?? "—"}</strong><span>{m.pendingCount}</span></article><article className="kpi"><strong dir="ltr">{page?.items.filter(x => x.priority === "urgent").length ?? "—"}</strong><span>{m.urgentCount}</span></article></div>}
     <div className="inbox-tools">
-      <nav className="quick-tabs" aria-label={m.inboxTabs.label}>{inboxTabs.map(item => <button key={item} type="button" className={tab === item ? "chip active" : "chip"} aria-pressed={tab === item} onClick={() => choose(item)}>{item === "urgent" && <Icon name="bolt" size={14} />}{m.inboxTabs[item]}{counts && <> <span className="tab-count" dir="ltr">{counts[item]}</span></>}</button>)}</nav>
+      <nav className="quick-tabs" aria-label={m.inboxTabs.label}>{tabsFor(me).map(item => <button key={item} type="button" data-testid={`tab-${item}`} className={tab === item ? "chip active" : "chip"} aria-pressed={tab === item} onClick={() => choose(item)}>{item === "urgent" && <Icon name="bolt" size={14} />}{m.inboxTabs[item]}{counts && <> <span className="tab-count" dir="ltr">{counts[item]}</span></>}</button>)}</nav>
       <nav className="quick-tabs type-chips" aria-label={w.typeFilter.label} aria-describedby="type-filter-hint" data-testid="type-chips">{(["", ...materialTypes] as string[]).map(value => <button key={value || "all"} type="button" className={type === value ? "chip active" : "chip"} aria-pressed={type === value} onClick={() => setType(value)}>{value ? (m.types as Record<string, string>)[value] : w.typeFilter.all}</button>)}</nav>
     </div>
     <p id="type-filter-hint" className="caption visually-hidden">{w.typeFilter.hint}</p>
     <div id="inbox-filters" className="filter-panel" hidden={!filtersOpen}>
-      <div className="sort-tools"><label>{m.sort}<select value={sort} onChange={e => setSort(e.target.value as Sort)}>{([["shot_at", m.shotAt], ["governorate", m.governorate], ["reporter_id", m.reporterId], ["technical_state", m.technical], ["editorial_state", m.editorial], ["rights_state", m.rights]] as [Sort, string][]).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><button type="button" className="secondary small" onClick={() => setDescending(!descending)}>{descending ? m.descending : m.ascending}</button></div>
+      <div className="sort-tools"><label>{m.sort}<select value={sort} onChange={e => setSort(e.target.value as Sort)}>{([["shot_at", m.shotAt], ["governorate", m.governorate], ["technical_state", m.technical], ["editorial_state", m.editorial], ["rights_state", m.rights]] as [Sort, string][]).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><button type="button" className="secondary small" onClick={() => setDescending(!descending)}>{descending ? m.descending : m.ascending}</button></div>
       <form key={formKey} onSubmit={filter} className="filters">
-        {(Object.keys(states) as (keyof typeof states)[]).map(key => <label key={key}>{filterLabel(key, m)}<select name={key} defaultValue={query[key] ?? ""}><option value="">{m.all}</option>{states[key].map(state => <option key={state} value={state}>{(m.states[key] as Record<string, string>)[state]}</option>)}</select></label>)}
-        <label>{m.governorate}<input name="governorate" maxLength={64} defaultValue={query.governorate ?? ""} /></label><label>{m.reporterId}<input name="reporter_id" dir="ltr" defaultValue={query.reporter_id ?? ""} /></label><label>{m.shotAfter}<input type="datetime-local" name="shot_after" /></label><label>{m.shotBefore}<input type="datetime-local" name="shot_before" /></label><div className="actions"><button>{m.apply}</button><button type="reset" className="quiet" onClick={() => { setPage(null); setQuery({ limit: 50 }); setCursors([undefined]); setInvalid(false); }}>{m.reset}</button></div>
+        {(Object.keys(states) as (keyof typeof states)[]).map(key => <label key={key}>{filterLabel(key, m)}<select name={key} defaultValue={query[key] ?? ""}><option value="">{m.all}</option>{key === "editorial_state" && query.editorial_state === tabQuery.reviewing.editorial_state && <option value={query.editorial_state}>{m.inboxTabs.reviewing}</option>}{states[key].map(state => <option key={state} value={state}>{(m.states[key] as Record<string, string>)[state]}</option>)}</select></label>)}
+        <label>{m.governorate}<input name="governorate" maxLength={64} defaultValue={query.governorate ?? ""} /></label><label>{m.shotAfter}<input type="datetime-local" name="shot_after" /></label><label>{m.shotBefore}<input type="datetime-local" name="shot_before" /></label><div className="actions"><button>{m.apply}</button><button type="reset" className="quiet" onClick={() => { setPage(null); setQuery({ limit: 50 }); setCursors([undefined]); setInvalid(false); }}>{m.reset}</button></div>
       </form>{invalid && <p className="notice error" role="alert">{m.invalidFilters}</p>}</div>
     {chips.length > 0 && <ul className="filter-chips" aria-label={w.activeFilters}>{chips.map(chip => <li key={chip.key}><button type="button" className="chip removable" onClick={chip.remove} aria-label={w.removeFilter.replace("{filter}", chip.label)}>{chip.label}<Icon name="x" size={14} /></button></li>)}<li><button type="button" className="link-button" onClick={clearAll}>{w.clearAll}</button></li></ul>}
     <section className="inbox-list" aria-label={m.inbox} aria-busy={!page}>
@@ -158,9 +161,10 @@ function searchFields(item: Material) {
   return [item.title, item.governorate, item.city, item.files.find(f => f.receipt_number)?.receipt_number, item.display_name.mode === "pseudonym" ? item.display_name.pseudonym : null, ...(item.tags ?? [])];
 }
 function filterLabel(key: FilterKey, m: Messages) {
-  return key === "priority" ? m.priority : key === "technical_state" ? m.technical : key === "editorial_state" ? m.editorial : key === "rights_state" ? m.rights : key === "governorate" ? m.governorate : key === "reporter_id" ? m.reporterId : key === "shot_after" ? m.shotAfter : m.shotBefore;
+  return key === "priority" ? m.priority : key === "technical_state" ? m.technical : key === "editorial_state" ? m.editorial : key === "rights_state" ? m.rights : key === "governorate" ? m.governorate : key === "shot_after" ? m.shotAfter : m.shotBefore;
 }
 function filterValue(key: FilterKey, value: string, m: Messages, locale: Locale) {
+  if (key === "editorial_state" && value === tabQuery.reviewing.editorial_state) return m.inboxTabs.reviewing;
   if (key === "priority" || key === "technical_state" || key === "editorial_state" || key === "rights_state") return (m.states[key] as Record<string, string>)[value] ?? value;
   return key.startsWith("shot_") ? longDate(value, locale) : value;
 }
@@ -181,7 +185,7 @@ function MaterialRow({ material, locale, now, disabled, done }: { material: Mate
       : <span className="row-thumb" aria-hidden="true"><Icon name={material.material_types.includes("photos") ? "preview" : "play"} /></span>}
     <div className="row-main">
       <p className="row-title"><Link className="material-link" prefetch={false} href={`/${locale}/materials/${material.id}`}>{material.title}</Link>{material.priority !== "normal" && <span className={`priority-pill ${material.priority}`}>{urgent && <Icon name="bolt" size={12} />}{m.states.priority[material.priority]}</span>}</p>
-      <p className="row-meta"><span>{photographer(material, locale)}</span><span>{material.governorate}</span>{type && <span>{type}</span>}{files > 0 && <span>{plural(files, w.files, locale)}</span>}<span className="receipt"><bdi dir="ltr">{receipt ?? m.noReceipt}</bdi></span></p>
+      <p className="row-meta"><span>{photographer(material, locale)}</span><span>{governorateName(material.governorate, m.governorates)}</span>{type && <span>{type}</span>}{files > 0 && <span>{plural(files, w.files, locale)}</span>}<span className="receipt"><bdi dir="ltr">{receipt ?? m.noReceipt}</bdi></span></p>
       {material.tags?.length ? <ul className="tag-list" aria-label={w.tags}>{material.tags.map(tag => <li key={tag}><bdi>{tag}</bdi></li>)}</ul> : null}
     </div>
     <p className={`row-time${urgent ? " urgent" : ""}`}>{now ? w.since.replace("{time}", humanDuration(now - Date.parse(material.created_at), locale)) : longDate(material.created_at, locale)}</p>

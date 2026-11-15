@@ -11,6 +11,7 @@ import { useUser } from "./session-boundary";
 import { EmptyState, NoAccess } from "./empty-state";
 import { DueText, TaskState } from "./task-parts";
 import { Icon } from "./icon";
+import { untilVisible } from "@/lib/visibility";
 
 type Status = "active" | "closed";
 /** المادة لكل مهمة تُجلب مرة واحدة: العقد يعيد المهمة بمعرّف المادة وحده (العنوان والملفات والحساسية من `GET /materials/{id}` بقاعدة الحجب). */
@@ -31,6 +32,7 @@ export function MyTasks({ locale }: { locale: Locale }) {
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
     // الصفحة الأولى كل 30 ثانية (الموعد والتأخر من الخادم)؛ والصفحات التالية تُحمَّل بطلب المستخدم ولا تُستطلع.
     async function load() {
+      await untilVisible(controller.signal); if (controller.signal.aborted) return;
       try { const data = dataOrThrow(await browserApi().GET("/me/assignments", { params: { query: { status, limit: taskPageLimit } }, signal: controller.signal })); if (!controller.signal.aborted) { setPage(data); setFailed(false); setNow(Date.now()); } }
       catch { if (!controller.signal.aborted) setFailed(true); }
       finally { if (!controller.signal.aborted) timer = setTimeout(load, 30000); }

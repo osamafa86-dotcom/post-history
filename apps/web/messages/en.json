@@ -35,7 +35,19 @@
   "signIn": "Sign in",
   "signingIn": "Signing in…",
   "loginFailed": "Could not sign in. Check your credentials.",
+  "loginThrottled": "Too many attempts. Wait {wait}, then try again.",
+  "loginThrottledSoon": "Too many attempts. Wait a little, then try again.",
+  "loginUnavailable": "The server could not be reached. Your details were not checked; try again shortly.",
+  "loginWait": {
+    "seconds": { "zero": "a moment", "one": "{n} second", "two": "{n} seconds", "few": "{n} seconds", "many": "{n} seconds", "other": "{n} seconds" },
+    "minutes": { "zero": "a moment", "one": "{n} minute", "two": "{n} minutes", "few": "{n} minutes", "many": "{n} minutes", "other": "{n} minutes" }
+  },
   "totpRequired": "Enter your two-factor code.",
+  "resetIncomplete": {
+    "title": "Account setup is not finished",
+    "body": "The password is set, but the authenticator app was not linked; the account cannot sign in yet, and this is not about your role's permissions.",
+    "next": "The earlier link no longer works and the secret is not shown twice. Ask whoever gave you the first link for a new one, then finish both steps without closing the page."
+  },
   "revoked": "Your session was revoked",
   "signedOut": "You have signed out",
   "logout": "Sign out",
@@ -886,6 +898,7 @@
       "totpLead": "Add an account in your authenticator app with the secret below, then enter the six-digit code it shows.",
       "secret": "Secret for manual entry",
       "secretOnce": "The secret is shown here once and we don't keep it. Don't copy it anywhere else, and don't share it.",
+      "keepOpen": "Do not close or reload this page before entering the code. If the secret is lost before you confirm, ask your organization's admin for a new code.",
       "openApp": "Open in authenticator app",
       "code": "Code from the app",
       "codeInvalid": "Enter the six-digit code.",
@@ -929,7 +942,7 @@
   },
   "board": {
     "title": "Newsroom board",
-    "lead": "Materials in four columns: incoming, under verification, ready to publish and stalled; plus open urgent items and overdue acknowledgements. The snapshot refreshes every five seconds.",
+    "lead": "Materials in four columns: fully received, under verification, ready to publish and stalled; plus open urgent items and overdue acknowledgements. The snapshot refreshes every five seconds.",
     "denied": "This board is for supervisors, production and management.",
     "urgentOpen": "Open urgent",
     "overdue": "Overdue acknowledgements",
@@ -975,12 +988,12 @@
     "overdueAge": "Overdue {time}",
     "oldestOverdue": "Oldest {time}",
     "columns": {
-      "incoming": "Incoming",
+      "incoming": "Fully received",
       "checking": "Under verification",
       "ready": "Ready to publish",
       "stalled": "Stalled"
     },
-    "countCapped": "More than {n} materials are still being received technically in a single state, so no exact count is claimed: counts followed by + are minimums (the real figure may be higher), and what was not fetched is not placed in Incoming or Ready to publish.",
+    "countCapped": "More than {n} materials are still being received technically in a single state, so no exact count is claimed: counts followed by + are minimums (the real figure may be higher), and what was not fetched is not placed in Fully received or Ready to publish.",
     "atLeast": "at least",
     "columnHelp": {
       "incoming": "Fully received, nobody has looked yet",
@@ -1110,8 +1123,19 @@
       "verified": "Received and fingerprint verified.",
       "duplicate": "We already have this file, so there's no need to upload it again.",
       "failed": "The upload failed.",
-      "failedHint": "Part of it was probably lost in transfer. Please upload it again."
-    }
+      "failedHint": "Part of it was probably lost in transfer. Please upload it again.",
+      "incompleteUnknown": "Incomplete upload"
+    },
+    "errors": {
+      "title": "The title is 5 to 80 characters.",
+      "governorate": "Enter the governorate.",
+      "city": "Enter the city.",
+      "shot_at": "The shooting time cannot be in the future.",
+      "pseudonym": "Enter the pseudonym, or choose another display name."
+    },
+    "requiresUnavailable": "This form requires “{fields}”, which cannot be filled on the web yet, so this material cannot be sent from here. Send it from the phone app, or ask the form administrators to make it optional.",
+    "reselectUnknown": "The browser doesn't keep the file after closing. Choose the same file to continue from where it stopped. A different file starts a new upload.",
+    "draftRestored": "We kept what you had typed before the session ended. Choose the files again to continue."
   },
   "mine": {
     "nav": "My materials",
@@ -2055,6 +2079,7 @@
     "inbox": "Incoming",
     "reviewing": "Under review",
     "accepted": "Accepted",
+    "final_review": "Final review",
     "stopped": "Stopped"
   },
   "inboxSearch": {
@@ -2136,6 +2161,7 @@
       "totpLead": "Add an account in your authenticator app with the secret below, then enter the six-digit code it shows.",
       "secret": "Secret to add by hand",
       "secretOnce": "The secret is shown here once and we do not keep it. Do not copy it anywhere else, and do not share it.",
+      "keepOpen": "Do not close or reload this page before entering the code. If the secret is lost before you confirm, you will need a new link.",
       "openApp": "Open in authenticator app",
       "code": "Code from the app",
       "codeInvalid": "Enter the six-digit code.",
@@ -2920,6 +2946,18 @@
     "خان يونس": "Khan Yunis",
     "رفح": "Rafah"
   },
+  "validationLimits": {
+    "min_length": "Too short. Minimum length: {n} characters.",
+    "max_length": "Too long. Maximum length: {n} characters.",
+    "min": "Too low. Minimum value: {n}.",
+    "max": "Too high. Maximum value: {n}.",
+    "min_items": "Choose more. Minimum number of items: {n}.",
+    "max_items": "Choose fewer. Maximum number of items: {n}.",
+    "not_before": "Too early. Earliest date: {date}.",
+    "not_after": "Too late. Latest date: {date}.",
+    "max_size_bytes": "File too large. Maximum size: {n} MB."
+  },
+  "fieldUnavailable": "Not available on the web yet.",
   "refusals": {
     "listing_conditions_unmet": "The item is not shown before these are met: {conditions}.",
     "listing_sensitive": "The item is tagged as sensitive, so it is not offered for sale.",

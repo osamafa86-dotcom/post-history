@@ -16,7 +16,9 @@ export function materialQuery(params: URLSearchParams): MaterialQuery {
   for (const [key, value] of params) {
     if (!allowed.has(key) || params.getAll(key).length !== 1) throw new Error("Invalid query");
     if (!value) continue;
-    if (key in states && !(states[key as keyof typeof states] as readonly string[]).includes(value)) throw new Error("Invalid state");
+    // الحالة التحريرية وحدها تقبل قائمة (`a,b`) للـBFF، كل قيمة من العقد ومرة واحدة: تبويب «قيد المراجعة» في الوارد. الخادم يُسأل بحالة واحدة في كل طلب.
+    const values = key === "editorial_state" ? value.split(",") : [value];
+    if (key in states && (new Set(values).size !== values.length || values.some(item => !(states[key as keyof typeof states] as readonly string[]).includes(item)))) throw new Error("Invalid state");
     if (key === "reporter_id" && !uuid.test(value)) throw new Error("Invalid reporter");
     // الترتيب من قائمة العقد وحدها (v0.2)؛ الأرشيف الجاهز (W9) بالأحدث تعديلًا.
     if (key === "sort" && !(materialSorts as readonly string[]).includes(value)) throw new Error("Invalid sort");

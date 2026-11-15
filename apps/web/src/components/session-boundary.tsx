@@ -8,6 +8,7 @@ import { authPost, browserApi, dataOrThrow, leaveSession } from "@/lib/browser-a
 import { isBuyer } from "@/lib/buyer-policy";
 import { hasRole } from "@/lib/review";
 import { homePage } from "@/lib/home-page";
+import { untilVisible } from "@/lib/visibility";
 import { AccountActions, BottomBar, ShellState, ShellTopBar, Sidebar, useInboxBadge } from "./app-shell";
 import { navItems } from "./workspace-nav";
 import { CartProvider } from "./store/cart";
@@ -29,23 +30,38 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
     // الحالة الخاصة تُمحى كلها، ومعها آخر حساب معروف (الشريط وحده كان يُرسم منه أثناء الانقطاع).
     const wipe = () => { clear(); setLastMe(null); };
     const revoke = () => { if (!logoutPending.current) { wipe(); leaveSession(locale, "revoked"); } };
-    const check = async () => {
-      clear(); const current = sequence; controller = new AbortController();
+    // `keep`: العائد إلى تبويبه يبقى ما كان يعمل عليه مركّبًا ريثما يُتحقق من جلسته (ADR 0014، تعديل 2026-11-15)؛ في غير العودة يُمحى أولًا.
+    const check = async (keep = false) => {
+      if (keep) { sequence++; controller.abort(); } else clear();
+      const current = sequence; controller = new AbortController();
       try {
-        const data = dataOrThrow(await browserApi().GET("/auth/me", { signal: controller.signal }));
-        if (!disposed && current === sequence) { setMe(data); setLastMe(data); setError(false); }
-      } catch { if (!disposed && current === sequence && !controller.signal.aborted) setError(true); }
+        const result = await browserApi().GET("/auth/me", { signal: controller.signal });
+        if (disposed || current !== sequence) return;
+        // زائر بلا جلسة (لا كوكي): إلى صفحة الدخول بلا «أُبطلت الجلسة»، ويعود إلى رابطه بعد الدخول.
+        if (result.response.status === 401 && (result.error as { code?: string } | undefined)?.code === "signed_out") { if (!logoutPending.current) { wipe(); leaveSession(locale, "none"); } return; }
+        const data = dataOrThrow(result);
+        setMe(old => (old && JSON.stringify(old) === JSON.stringify(data) ? old : data)); setLastMe(data); setError(false);
+      } catch { if (!disposed && current === sequence && !controller.signal.aborted && !keep) setError(true); }
     };
-    const visibility = () => { if (document.visibilityState === "hidden") clear(); else void check(); };
+    // إخفاء التبويب لا يزيل محتواه (حوار مفتوح، مسودة، بحث)؛ الاستطلاع ينتظر (`untilVisible`). عند العودة يُسأل الخادم عن الجلسة: 401 يمحو
+    // ويحوّل إلى الدخول كما في كل طلب، وتعذّر الوصول يترك الصفحة لحالاتها (E3) ولا يمحو عملًا لم يُحفظ.
+    const visibility = () => { if (document.visibilityState !== "hidden") void check(true); };
     const restored = (event: PageTransitionEvent) => { if (event.persisted) void check(); };
     const channel = "BroadcastChannel" in window ? new BroadcastChannel("web-session") : null;
-    if (channel) channel.onmessage = () => { clear(); void check(); };
+    // خروج صاحب الجلسة في تبويب آخر خروجٌ هنا بالرسالة نفسها، لا «أُبطلت الجلسة»؛ وغيره (دخول حساب، جلسة انتهت) يُتحقق منه.
+    // «signing-out» تسبق طلب الخروج: استطلاعٌ هنا يردّ 401 بين الطلب ورسالة تمامه لا يُقرأ إبطالًا. إن لم يتمّ الخروج عاد التبويب إلى حاله.
+    let leaving: ReturnType<typeof setTimeout> | undefined;
+    if (channel) channel.onmessage = event => {
+      if (event.data === "signing-out") { logoutPending.current = true; clearTimeout(leaving); leaving = setTimeout(() => { logoutPending.current = false; }, 10000); return; }
+      if (event.data === "signed-out") { wipe(); leaveSession(locale, "signed-out", false); return; }
+      clear(); void check();
+    };
     window.addEventListener("session-revoked", revoke);
     window.addEventListener("clear-private-state", wipe);
     window.addEventListener("pageshow", restored);
     document.addEventListener("visibilitychange", visibility);
     void check();
-    return () => { disposed = true; controller.abort(); channel?.close(); window.removeEventListener("session-revoked", revoke); window.removeEventListener("clear-private-state", wipe); window.removeEventListener("pageshow", restored); document.removeEventListener("visibilitychange", visibility); };
+    return () => { disposed = true; controller.abort(); clearTimeout(leaving); channel?.close(); window.removeEventListener("session-revoked", revoke); window.removeEventListener("clear-private-state", wipe); window.removeEventListener("pageshow", restored); document.removeEventListener("visibilitychange", visibility); };
   }, [locale, attempt]);
   // E3: تعذّر الوصول إلى الخادم؛ نعيد المحاولة كل 15 ثانية وعند عودة الشبكة، والهيكل باقٍ.
   const offline = !me && error;
@@ -59,6 +75,7 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
   async function logout(all: boolean) {
     // في الانقطاع (لا حساب محمّل) تبقى حالة E3 ظاهرة؛ فشل الخروج يُبقيها كما هي.
     logoutPending.current = true; setBusy(true); if (me) setError(false);
+    if ("BroadcastChannel" in window) { const channel = new BroadcastChannel("web-session"); channel.postMessage("signing-out"); channel.close(); }
     try {
       const result = await authPost("logout", { all_sessions: all });
       if (result.response.ok || result.response.status === 401) { setMe(null); setLastMe(null); leaveSession(locale, result.response.status === 401 ? "revoked" : "signed-out"); }
@@ -72,6 +89,12 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
   const languageHref = pathname.replace(`/${locale}`, locale === "ar" ? "/en" : "/ar");
   if (offline) return <OfflineShell locale={locale} me={lastMe} pathname={pathname} languageHref={languageHref} busy={busy} retry={() => setAttempt(n => n + 1)} logout={() => void logout(false)} />;
   if (!me || (buyer && !buyerPage)) return <main className="center-state" role="status"><span className="skeleton block" aria-hidden="true" />{m.loading}</main>;
+  // جلسة مقيّدة (كلمة المرور عُيّنت وربط المصادقة لم يكتمل): كل صفحة تردّ 403، فتُشرح الحال والخطوة التالية بدل «خارج صلاحيات دورك».
+  if (me.credential_reset_required) return <main className="center-state" data-testid="reset-incomplete">
+    <EmptyState icon="key" role="alert" title={m.resetIncomplete.title} actions={<button type="button" disabled={busy} onClick={() => void logout(false)}><Icon name="logout" />{m.logout}</button>}>
+      <p>{m.resetIncomplete.body}</p><p>{m.resetIncomplete.next}</p>
+    </EmptyState>
+  </main>;
   const items = navItems(me, locale, pathname), inboxHref = `/${locale}/${homePage(me)}`;
   const account = <AccountActions me={me} locale={locale} languageHref={languageHref} busy={busy} logout={() => void logout(false)} logoutAll={() => setConfirmAll(true)} />;
   // هيكل v2 (W1، M1، T1): الشريط الجانبي في جهة البداية، والشريط العلوي فوق المحتوى، والشريط السفلي على الجوال.
@@ -129,7 +152,7 @@ function UrgentBadge({ me, skip }: { me: Me; skip: boolean }) {
   useEffect(() => {
     if (!allowed || skip) return;
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
-    async function poll() { try { const data = dataOrThrow(await browserApi().GET("/dashboard/newsroom", { signal: controller.signal })); if (!controller.signal.aborted) set(data.urgent_open); } catch { /* يبقى بآخر قيمة */ } finally { if (!controller.signal.aborted) timer = setTimeout(poll, 60000); } }
+    async function poll() { await untilVisible(controller.signal); if (controller.signal.aborted) return; try { const data = dataOrThrow(await browserApi().GET("/dashboard/newsroom", { signal: controller.signal })); if (!controller.signal.aborted) set(data.urgent_open); } catch { /* يبقى بآخر قيمة */ } finally { if (!controller.signal.aborted) timer = setTimeout(poll, 60000); } }
     void poll(); return () => { controller.abort(); clearTimeout(timer); };
   }, [allowed, skip, set]);
   return null;

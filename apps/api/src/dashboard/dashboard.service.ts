@@ -1,9 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, count, desc, eq, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { staffWorkName, workNameFor } from '../common/design-fields';
 import { DB, type Database } from '../database/database.module';
-import { materialFiles, materials, notifications, offices, uploadSessions } from '../database/schema/schema';
+import { materialFiles, materials, notificationRuleEscalations, notifications, offices, uploadSessions } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import type { Principal } from '../identity/principal';
 import { iso, scopeCondition } from '../materials/material-store';
@@ -79,9 +79,18 @@ export class DashboardService {
       .where(and(scope, isNotNull(materialFiles.receiptNumber), isNotNull(materialFiles.verifiedAt)))
       .orderBy(desc(materialFiles.verifiedAt))
       .limit(20);
-    // مهام حان تصعيدها (أو صُعِّدت) ولم يُقرّ استلامها، لمواد ضمن النطاق
+    // مواد لها مهمة حان تصعيدها (أو صُعِّدت) ولم يُقرّ استلامها، ضمن النطاق. المادة تُعدّ مرة واحدة: تصعيدها إلى رئيس التحرير ومديري
+    // النظام يفتح لكلٍّ منهم صفًّا، والمنتظر مادة واحدة. والأقدم موعدها الأول من مهمتها الأصلية: `escalate_at` قبل التصعيد، وبعده (وقد
+    // تقدّم الموعد أو فرغ) وقت الإسناد زائدًا مهلتها الأولى، وهي مهلة أولويتها أو أول مستوى في قاعدتها، كما وضعها التوزيع.
+    const firstDelay = sql`COALESCE((SELECT e.after_seconds FROM ${notificationRuleEscalations} e WHERE e.rule_id = ${notifications.ruleId} AND e.level = 1),
+      CASE WHEN ${notifications.priority} = 'urgent' THEN ${this.config.ESCALATION_URGENT_SECONDS}::int ELSE ${this.config.ESCALATION_IMPORTANT_SECONDS}::int END)`;
     const overdueQuery = this.db
-      .select({ n: count(), oldest: sql<string | null>`min(${notifications.escalateAt}) FILTER (WHERE ${notifications.escalateAt} <= now())` })
+      .select({
+        n: sql<number>`count(DISTINCT ${notifications.materialId})::int`,
+        oldest: sql<string | null>`min(CASE WHEN ${notifications.type} = 'notification.escalated' THEN NULL
+          WHEN ${notifications.escalationLevel} = 0 THEN ${notifications.escalateAt}
+          ELSE ${notifications.createdAt} + make_interval(secs => ${firstDelay}) END)`,
+      })
       .from(notifications)
       .innerJoin(materials, eq(materials.id, notifications.materialId))
       .leftJoin(offices, eq(offices.id, materials.officeId))
