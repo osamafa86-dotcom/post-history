@@ -7,19 +7,22 @@ import type { PasskeyChallenge } from "@/lib/passkey-policy";
 import { clearUploads } from "@/lib/upload-store";
 import { messages, type Locale } from "@/lib/i18n";
 import { homePage, type HomePage } from "@/lib/home-page";
+import { loginFailure, loginFailureText } from "@/lib/login-policy";
+import { loginTarget, returnPath } from "@/lib/return-path";
 import { clearCart } from "./store/cart";
 import { BrandMark, Icon } from "./icon";
 
 const still = () => () => {};
-/** بعد الدخول: صفحة يقرؤها الدور (المالية في الصرف، المشتري في المتجر)، لا الوارد لكل أحد. تعذّر القراءة يعيد إلى الوارد كما كان. */
-const signedIn = async (locale: Locale) => {
+/** بعد الدخول: صفحة العودة إن وُجدت، وإلا صفحة يقرؤها الدور (المالية في الصرف، المشتري في المتجر)، لا الوارد لكل أحد. تعذّر القراءة يعيد إلى الوارد كما كان. */
+const signedIn = async (locale: Locale, next?: string | null) => {
   if ("BroadcastChannel" in window) { const channel = new BroadcastChannel("web-session"); channel.postMessage("signed-in"); channel.close(); }
   let page: HomePage = "inbox";
   try { const result = await browserApi().GET("/auth/me"); if (result.response.ok && result.data) page = homePage(result.data); } catch { /* الوارد */ }
-  window.location.replace(`/${locale}/${page}`);
+  // من انتهت جلسته وسط العمل أو فتح رابطًا عميقًا بلا جلسة يعود إلى صفحته (مسار داخلي وحده)؛ وغيره إلى صفحة دوره.
+  window.location.replace(loginTarget(returnPath(next, window.location.origin), locale, page));
 };
 
-export function Login({ locale, reason }: { locale: Locale; reason?: string }) {
+export function Login({ locale, reason, next }: { locale: Locale; reason?: string; next?: string | null }) {
   const m = messages[locale]; const [busy, setBusy] = useState(false), [error, setError] = useState(""), [passkeyBusy, setPasskeyBusy] = useState(false);
   // دعم WebAuthn يُعرف في المتصفح وحده؛ لقطة الخادم «غير مدعوم» فلا يُرسم زرّ لا يعمل قبل التحميل.
   const supported = useSyncExternalStore(still, passkeysSupported, () => false);
@@ -30,9 +33,10 @@ export function Login({ locale, reason }: { locale: Locale; reason?: string }) {
     setBusy(true); setError("");
     try {
       const result = await authPost("login", { email: fields.get("email"), password: fields.get("password"), ...(fields.get("totp") ? { totp_code: fields.get("totp") } : {}) });
-      if (!result.response.ok) { setError(result.body.code === "totp_required" ? m.totpRequired : m.loginFailed); return; }
-      form.reset(); await signedIn(locale);
-    } catch { setError(m.error); } finally { setBusy(false); }
+      // حدّ المعدّل وتعذّر الخادم يُقالان باسميهما: صاحب كلمة مرور صحيحة لا يُطلب منه «تحقق من البيانات».
+      if (!result.response.ok) { setError(loginFailureText(loginFailure(result.response.status, result.body), locale)); return; }
+      form.reset(); await signedIn(locale, next);
+    } catch { setError(m.loginUnavailable); } finally { setBusy(false); }
   }
   const t = m.signInPage;
   /** الدخول بمفتاح المرور (ADR 0108): التحدي من الخادم، ثم مراسم المتصفح، ثم التحقق في الخادم وجلسة جديدة. لا بريد يُكتب: المفتاح يعرّف صاحبه. */
@@ -48,7 +52,7 @@ export function Login({ locale, reason }: { locale: Locale; reason?: string }) {
       try { credential = await signInCeremony(options.body as PasskeyChallenge); }
       catch (failure) { setError(ceremonyFailure(failure) === "cancelled" ? t.passkeyCancelled : t.passkeyFailed); return; }
       const result = await publicPost("auth/passkeys/login", { challenge_id: options.body.challenge_id, credential });
-      if (result.status === 200) { await signedIn(locale); return; }
+      if (result.status === 200) { await signedIn(locale, next); return; }
       setError(result.status === 410 ? t.passkeyExpired : result.status === 404 ? t.passkeyUnavailable : result.status === 401 ? t.passkeyFailed : m.error);
     } catch { setError(m.error); } finally { setPasskeyBusy(false); }
   }
@@ -60,7 +64,7 @@ export function Login({ locale, reason }: { locale: Locale; reason?: string }) {
       <div><h2 id="story-title">{t.storyTitle}</h2><p>{t.storyLead}</p></div>
     </section>
     <section className="login-panel">
-      <a className="locale-link" href={`/${locale === "ar" ? "en" : "ar"}/login`} lang={locale === "ar" ? "en" : "ar"}>{m.language}</a>
+      <a className="locale-link" href={`/${locale === "ar" ? "en" : "ar"}/login${next ? `?next=${encodeURIComponent(next)}` : ""}`} lang={locale === "ar" ? "en" : "ar"}>{m.language}</a>
       <div className="login-card">
         <p className="login-brand"><BrandMark size={28} /><span>{m.product}</span></p>
         <h1>{t.welcome}</h1>

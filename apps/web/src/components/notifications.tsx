@@ -12,6 +12,7 @@ import { useMutation } from "@/lib/use-mutation";
 import { ActionStatus } from "./action-status";
 import { EmptyState, ErrorState } from "./empty-state";
 import { Icon } from "./icon";
+import { untilVisible } from "@/lib/visibility";
 
 const state = (n: Notification) => n.acknowledged_at || n.state === "acknowledged" ? "acknowledged" : n.read_at || n.state === "read" ? "read" : "unread";
 
@@ -26,7 +27,7 @@ export function Notifications({ locale }: { locale: Locale }) {
   const cursor = cursors.at(-1), bulkBefore = useRef<string | null>(null);
   useEffect(() => {
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
-    async function load() { const startedAt = Date.now(); try { const result = dataOrThrow(await browserApi().GET("/notifications", { params: { query: { limit: 50, cursor, unread_only: unread } }, signal: controller.signal })); if (!controller.signal.aborted) { setData(result); setCheckedAt(startedAt); setFailed(false); } } catch { if (!controller.signal.aborted) setFailed(true); } finally { if (!controller.signal.aborted) timer = setTimeout(load, 15000); } }
+    async function load() { await untilVisible(controller.signal); if (controller.signal.aborted) return; const startedAt = Date.now(); try { const result = dataOrThrow(await browserApi().GET("/notifications", { params: { query: { limit: 50, cursor, unread_only: unread } }, signal: controller.signal })); if (!controller.signal.aborted) { setData(result); setCheckedAt(startedAt); setFailed(false); } } catch { if (!controller.signal.aborted) setFailed(true); } finally { if (!controller.signal.aborted) timer = setTimeout(load, 15000); } }
     void load(); return () => { controller.abort(); clearTimeout(timer); };
   }, [cursor, unread, attempt]);
   async function change(group: NotificationGroup, action: "read" | "ack") {

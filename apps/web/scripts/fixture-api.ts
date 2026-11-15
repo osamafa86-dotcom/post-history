@@ -174,6 +174,7 @@ reset(); seedTemplates(); seedOrganizations(); seedLicenses(); seedCommission();
 const signed = new Map<string, { kind: "proxy" | "thumbnail" | "produced"; expires: number }>();
 let expireNextProxy = false;
 const access = new Map<string, Me>(), refresh = new Map<string, Me>();
+let loginThrottle = 0;
 function profile(email: string): Me {
   const names: Record<string, Me["roles"]> = { chief: [{ name: "editor_in_chief", scopes: [] }], reviewer: ["supervisor", "rights_officer", "producer"].map(name => ({ name: name as Me["roles"][number]["name"], scopes: [] })), admin: [{ name: "system_admin", scopes: [] }], reporter: [{ name: "reporter", scopes: [] }], buyeradmin: [{ name: "buyer_admin", scopes: [] }], buyer: [{ name: "buyer_member", scopes: [] }], finance: [{ name: "finance", scopes: [] }],
     // الحساب الاصطناعي العام (مراسل المواد كلها في البذرة) وحساب الصلاحيات المنفصلة: مراسل يقرأ المواد كالخادم الحقيقي، لا حساب بلا دور
@@ -181,6 +182,8 @@ function profile(email: string): Me {
     fixture: [{ name: "reporter", scopes: [] }], permissions: [{ name: "reporter", scopes: [] }] };
   const local = email.split("@")[0], buyer = local === "buyeradmin" || local === "buyer";
   // مدير مؤسسة قيد التحقّق (S6): المؤسسة الأخرى في البذرة، والكتالوج يردّه 403.
+  // مشرف له اسم عمل داخلي (سطر الحساب في الشريط).
+  if (local === "named") return { ...me, user_id: "10000000-0000-4000-8000-000000000077", roles: [{ name: "supervisor", scopes: [] }], permissions: [], work_name: "مشرفة المناوبة" };
   if (local === "pendingbuyer") return { ...me, user_id: "91000000-0000-4000-8000-000000000009", organization_id: otherOrg, roles: [{ name: "buyer_admin", scopes: [] }], permissions: [] };
   return { ...me, ...(buyer ? { user_id: local === "buyer" ? "91000000-0000-4000-8000-000000000002" : "91000000-0000-4000-8000-000000000001", organization_id: buyerOrg } : {}), roles: names[local] ?? [], permissions: email.startsWith("permissions@") ? ["sensitive_location:read", "protected_source:read", "reporter_identity:read"] : [] };
 }
@@ -199,8 +202,9 @@ const server = createServer(async (req, res) => {
   if (url.pathname.startsWith("/files/")) { res.removeHeader("Content-Type"); return tus(req, res, url); }
   if (url.pathname === "/__test/tus" && req.method === "POST") { const query = url.searchParams; Object.assign(tusFaults, { rejectIngest: Number(query.get("reject_ingest") ?? 0), failPatches: Number(query.get("fail_patches") ?? 0), cutNext: query.get("cut") === "1", revoked: tusFaults.revoked }); return send({ ok: true }); }
   if (url.pathname === "/__test/uploads") return send([...uploads.values()].map(u => ({ state: u.session.state, receipt: u.session.receipt_number, ingest_tokens: [...ingestTokens.values()].filter(t => t.sid === u.session.id).length, ...(u.tus ? (({ length, offset, patches, resent, cuts }) => ({ length, offset, patches, resent, cuts }))(tusFiles.get(u.tus) ?? { length: 0, offset: 0, patches: 0, resent: 0, cuts: 0 }) : {}) })));
-  if (url.pathname === "/__test/reset" && req.method === "POST") { consumedInvites.clear(); rules.clear(); listings.clear(); seedOrders(); seedLicenses(); seedTemplates(); seedOrganizations(); seedCommission(); seedConflicts(); seedEarnings(); reset(); resetUploads(); resetAssignments(); resetAdmin(); resetAuth(profile("reviewer@example.test")); return send({ ok: true }); }
+  if (url.pathname === "/__test/reset" && req.method === "POST") { loginThrottle = 0; consumedInvites.clear(); rules.clear(); listings.clear(); seedOrders(); seedLicenses(); seedTemplates(); seedOrganizations(); seedCommission(); seedConflicts(); seedEarnings(); reset(); resetUploads(); resetAssignments(); resetAdmin(); resetAuth(profile("reviewer@example.test")); return send({ ok: true }); }
   // الاستعادة ومفاتيح المرور (ADR 0108): حالة للتحقق، وإيقاف المفاتيح على الخادم، وتنبيه طلب استعادة ينتظر المشرف.
+  if (url.pathname === "/__test/login-throttle" && req.method === "POST") { loginThrottle = Number(url.searchParams.get("seconds") ?? 30); return send({ ok: true }); }
   if (url.pathname === "/__test/auth") return send(authState());
   if (url.pathname === "/__test/passkeys-off" && req.method === "POST") { setPasskeysOff(true); return send({ ok: true }); }
   if (url.pathname === "/__test/recovery-notice" && req.method === "POST") {
@@ -288,6 +292,8 @@ const server = createServer(async (req, res) => {
     if (!req.headers["idempotency-key"]) return send({ code: "missing_idempotency_key" }, 400);
   }
   if (url.pathname === "/v1/auth/login" && req.method === "POST") {
+    // حدّ المعدّل (`/__test/login-throttle`): الدخول التالي يُردّ 429 بمهلته، بكلمة مرور صحيحة أو خاطئة.
+    if (loginThrottle) { res.setHeader("Retry-After", String(loginThrottle)); loginThrottle = 0; return send({ code: "rate_limited" }, 429); }
     if (body.password !== "synthetic-password") return send({ code: "unauthorized" }, 401);
     if (body.totp_code !== "123456") return send({ code: "totp_required" }, 401);
     return send(session(profile(String(body.email))));

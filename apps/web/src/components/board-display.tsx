@@ -12,6 +12,7 @@ import { mediaDuration } from "@/lib/assignment-policy";
 import { beep } from "@/lib/alert-sound";
 import { photographer } from "./states";
 import { useUser } from "./session-boundary";
+import { untilVisible } from "@/lib/visibility";
 
 const uploadSlots = 3, fetchLimit = 100;
 
@@ -63,6 +64,7 @@ export function BoardDisplay({ locale, light }: { locale: Locale; light: boolean
     const failed = () => { if (!disposed && !controller.signal.aborted) setFailedSince(at => at ?? Date.now()); };
     // اللقطة كل 5 ثوانٍ (حدّ حداثتها في العقد)، والبلاطات كل 15 ثانية؛ الاستطلاع تسلسلي.
     async function pollSnapshot() {
+      await untilVisible(controller.signal); if (controller.signal.aborted) return;
       try {
         const data = dataOrThrow(await browserApi().GET("/dashboard/newsroom", { signal: controller.signal }));
         if (disposed) return;
@@ -72,6 +74,7 @@ export function BoardDisplay({ locale, light }: { locale: Locale; light: boolean
       finally { if (!disposed) fast = setTimeout(pollSnapshot, 5000); }
     }
     async function pollTiles() {
+      await untilVisible(controller.signal); if (controller.signal.aborted) return;
       try { const data = await loadInbox(controller.signal); if (!disposed) setInbox(data); }
       catch { failed(); }
       finally { if (!disposed) slow = setTimeout(pollTiles, 15000); }

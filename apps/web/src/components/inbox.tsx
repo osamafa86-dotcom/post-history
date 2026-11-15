@@ -20,6 +20,7 @@ import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
 import { InboxNow } from "./newsroom-board";
 import { AssignButton } from "./task-parts";
+import { untilVisible } from "@/lib/visibility";
 
 const dashboardRoles = ["supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin"] as const;
 const filterKeys = ["priority", "technical_state", "editorial_state", "rights_state", "governorate", "reporter_id", "shot_after", "shot_before"] as const;
@@ -51,7 +52,7 @@ export function Inbox({ locale }: { locale: Locale }) {
   useEffect(() => {
     if (!staff) return;
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
-    async function poll() { try { const data = dataOrThrow(await browserApi().GET("/dashboard/newsroom", { signal: controller.signal })); if (!controller.signal.aborted) { setSnapshot(data); setBadge(data.urgent_open); } } catch { /* الإحصاءات تبقى بآخر قيمة */ } finally { if (!controller.signal.aborted) timer = setTimeout(poll, 5000); } }
+    async function poll() { await untilVisible(controller.signal); if (controller.signal.aborted) return; try { const data = dataOrThrow(await browserApi().GET("/dashboard/newsroom", { signal: controller.signal })); if (!controller.signal.aborted) { setSnapshot(data); setBadge(data.urgent_open); } } catch { /* الإحصاءات تبقى بآخر قيمة */ } finally { if (!controller.signal.aborted) timer = setTimeout(poll, 5000); } }
     void poll(); return () => { controller.abort(); clearTimeout(timer); };
   }, [staff, refresh, setBadge]);
   useEffect(() => { const tick = () => setNow(Date.now()); tick(); const timer = setInterval(tick, 1000); return () => clearInterval(timer); }, []);
@@ -59,6 +60,7 @@ export function Inbox({ locale }: { locale: Locale }) {
     if (!reader) return;
     const controller = new AbortController(); let disposed = false, stopped = false, timer: ReturnType<typeof setTimeout>;
     async function poll() {
+      await untilVisible(controller.signal); if (controller.signal.aborted) return;
       if (!navigator.onLine) { setOffline(true); timer = setTimeout(poll, 15000); return; }
       try {
         // الاستطلاع تسلسلي؛ لا تتراكم طلبات عند البطء ولا تُحفظ حمولة الإشعار في الواجهة.
