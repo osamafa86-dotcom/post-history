@@ -63,10 +63,32 @@ describe('sandbox payment provider', () => {
     expect(await p.status(a.providerRef)).toBe('succeeded');
     const r1 = await p.refund({ providerRef: a.providerRef, amount: money(500, 'ILS'), idempotencyKey: 'r1' });
     expect(await p.refund({ providerRef: a.providerRef, amount: money(500, 'ILS'), idempotencyKey: 'r1' })).toEqual(r1);
-    // تأكيد الاسترداد التجريبي إشعار موقّع بمرجعه ومبلغه
-    const n = p.settleRefund(r1.refundRef, now)!;
+    expect(r1.refundRef).toMatch(/^sbr_[0-9a-f]{32}$/);
+    expect((await p.refund({ providerRef: a.providerRef, amount: money(500, 'ILS'), idempotencyKey: 'r2' })).refundRef).not.toBe(r1.refundRef);
+    // تأكيد الاسترداد التجريبي إشعار موقّع بمرجعه وبالمبلغ الذي يعطيه الخادم من سجله
+    const n = p.settleRefund(r1.refundRef, money(500, 'ILS'), now);
     expect(p.verifyWebhook(n.body, n.headers, now)).toMatchObject({ type: 'refund.succeeded', providerRef: r1.refundRef, amount: money(500, 'ILS') });
-    expect(p.settleRefund('sbr_unknown', now)).toBeUndefined();
+  });
+
+  it('a refund keeps its reference across a restart: the reference comes from the key, not from memory', async () => {
+    const before = new SandboxPaymentProvider(secret, 'http://api.test/');
+    const after = new SandboxPaymentProvider(secret, 'http://api.test/');
+    const input = { providerRef: 'sbx_1', amount: money(500, 'ILS'), idempotencyKey: 'refund:1' };
+    expect(await after.refund(input)).toEqual(await before.refund(input));
+  });
+
+  it('cancelling closes a session still awaiting payment, and leaves a paid one as it is', async () => {
+    const p = new SandboxPaymentProvider(secret, 'http://api.test/');
+    const open = await p.createCheckout({ orderId: 'o1', amount: money(500, 'ILS'), returnUrl: '', idempotencyKey: 'k1' });
+    const paid = await p.createCheckout({ orderId: 'o2', amount: money(700, 'ILS'), returnUrl: '', idempotencyKey: 'k2' });
+    p.settle(paid.providerRef, 'succeeded', now);
+    await p.cancelCheckout(open.providerRef);
+    await p.cancelCheckout(paid.providerRef);
+    await p.cancelCheckout('sbx_unknown');
+    expect(p.amountOf(open.providerRef)).toBeUndefined();
+    expect(() => p.settle(open.providerRef, 'succeeded', now)).toThrow();
+    expect(await p.status(paid.providerRef)).toBe('succeeded');
+    expect(p.amountOf(paid.providerRef)).toEqual(money(700, 'ILS'));
   });
 
   describe('configuration (ADR 0032)', () => {

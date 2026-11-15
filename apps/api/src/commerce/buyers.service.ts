@@ -1,7 +1,7 @@
 import { hash } from '@node-rs/argon2';
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { and, count, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { randomToken, sha256 } from '../common/crypto';
 import { pgError } from '../common/db-errors';
 import { ApiError } from '../common/errors';
@@ -9,7 +9,7 @@ import { DB, type Database, type Executor, type Tx } from '../database/database.
 import { buyerInviteConflicts, buyerOrganizations, recoveryRequests, userRoles, users } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import { hasRole, type Principal } from '../identity/principal';
-import { audit } from '../identity/recovery-approval';
+import { audit, resetCredentials } from '../identity/recovery-approval';
 import { revokeAllAccess } from '../identity/session.service';
 import { RESET_TOKEN_DELIVERY, type ResetTokenDelivery } from '../identity/reset-token-delivery';
 import { iso } from '../materials/material-store';
@@ -30,6 +30,9 @@ type RejectionReason = components['schemas']['BuyerOrganizationRejectionReason']
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BUYER_ROLES = ['buyer_admin', 'buyer_member'] as const;
+type BuyerRole = (typeof BUYER_ROLES)[number];
+/** ما صدر لمدعو: حساب حقيقي بطلب استعادة يحمل رمزه، أو تعارض لا رمز له يُسلَّم */
+type Issued = { conflict: true; userId: string; expiresAt: string } | { conflict: false; userId: string; recoveryRequestId: string; expiresAt: string };
 
 /**
  * مؤسسات المشترين وأعضاؤها (العقد v0.3، الجزء 3، ADR 0025). المؤسسة حساب مستقل: أعضاؤها يرون مؤسستهم وحدها، وأي
@@ -59,10 +62,11 @@ export class BuyersService {
       .orderBy(desc(buyerOrganizations.createdAt), desc(buyerOrganizations.id))
       .limit(limit + 1);
     const page = rows.slice(0, limit);
-    const active = await activeCounts(this.db, page.map((r) => r.org.id));
+    const ids = page.map((r) => r.org.id);
+    const [active, occupied] = await Promise.all([activeCounts(this.db, ids), occupiedCounts(this.db, ids)]);
     const last = page[page.length - 1];
     return {
-      items: page.map((r) => toDto(r.org, active.get(r.org.id) ?? 0)),
+      items: page.map((r) => toDto(r.org, active.get(r.org.id) ?? 0, occupied.get(r.org.id) ?? 0)),
       next_cursor: rows.length > limit && last ? Buffer.from(JSON.stringify([last.at, last.org.id])).toString('base64url') : null,
     };
   }
@@ -180,38 +184,157 @@ export class BuyersService {
   /**
    * دعوة عضو. البريد القائم لحساب خارج المؤسسة لا يُكشف (متابعة أمن #304): الرد بشكل الدعوة الناجحة وحالتها، والتعارض
    * يُحفظ عضوًا مدعوًّا في `buyer_invite_conflicts` يحسمه مدير النظام، فيظهر في القائمة ويشغل مقعدًا كأي مدعو. البريد
-   * القائم في المؤسسة نفسها (عضوًا أو تعارضًا مفتوحًا) يبقى 409، لأن مدير المؤسسة يراه في قائمتها أصلًا.
+   * الذي لم يكتمل قبول دعوته في المؤسسة نفسها (مدعوًّا أو تعارضًا قائمًا) يُعاد إصدار رمزه بلا مقعد جديد، والذي أُلغيت دعوته
+   * يُدعى من جديد بالمعرّف نفسه إن بقي مقعد (قرار المنسّق 2026-11-15)؛ والتعارض يسلك مسلك الحساب الحقيقي في الحالتين فلا
+   * يفرّق بينهما رد. العضو الذي أكمل القبول، والمعلّق، يبقيان 409 لأن مدير المؤسسة يراهما في قائمتها أصلًا.
    */
   async invite(p: Principal, orgId: string, input: BuyerMemberInvite): Promise<BuyerMember & InviteToken> {
     this.assertVisible(p, orgId);
     const passwordHash = await hash(randomToken(32));
     const token = randomToken(32);
-    const member = await this.db.transaction(async (tx) => {
+    const member = await this.db.transaction(async (tx): Promise<Issued> => {
       // قفل المؤسسة يسلسل الدعوات، فلا تتجاوز دعوتان متزامنتان حد المقاعد
       const [org] = await tx.select().from(buyerOrganizations).where(eq(buyerOrganizations.id, orgId)).for('update');
       if (!org) throw ApiError.notFound();
-      if ((await seatsTaken(tx, orgId)) >= org.seats) throw new ApiError(409, 'seats_exhausted', 'The organization has no free seat.');
       const taken = await existingAccount(tx, input.email);
+      const rows = await memberRows(tx, orgId);
+      const listed = taken
+        ? rows.find((m) => (taken.organizationId === orgId ? m.id === taken.id : m.conflict && m.email.toLowerCase() === input.email.toLowerCase()))
+        : undefined;
+      if (listed?.status === 'invited') {
+        const issued = await this.reissue(tx, p.userId, orgId, listed, token, input.role);
+        if (org.status === 'active') assertAdminRemains(await memberRows(tx, orgId));
+        return issued;
+      }
+      if ((await seatsTaken(tx, orgId)) >= org.seats) throw new ApiError(409, 'seats_exhausted', 'The organization has no free seat.');
+      if (listed) throw emailTaken();
+      if (taken?.organizationId === orgId) {
+        // لا دور له في المؤسسة: دعوة أُلغيت قبل قبولها تعود بحسابها نفسه؛ وغيرها حساب قائم
+        if (!taken.neverAccepted) throw emailTaken();
+        await tx.insert(userRoles).values({ userId: taken.id, role: input.role, scopeKind: 'organization', scopeId: orgId, grantedBy: p.userId });
+        await tx.update(users).set({ membershipSuspended: false }).where(eq(users.id, taken.id));
+        const request = await this.issueToken(tx, taken.id, p.userId, token);
+        await audit(tx, p.userId, 'buyer_member.invited', taken.id, { organization_id: orgId, target_user_id: taken.id, role: input.role });
+        return { conflict: false, userId: taken.id, ...request };
+      }
       if (taken) {
-        if (taken.organizationId === orgId || (await openConflict(tx, orgId, input.email))) throw emailTaken();
-        const [c] = await tx
-          .insert(buyerInviteConflicts)
-          .values({ organizationId: orgId, email: input.email, existingUserId: taken.id, role: input.role, invitedBy: p.userId, inviteExpiresAt: sql`now() + interval '24 hours'` })
-          .returning({ id: buyerInviteConflicts.id, expiresAt: buyerInviteConflicts.inviteExpiresAt });
+        // دعوة متعارضة أُلغيت تعود بمعرّفها نفسه كما يعود الحساب الحقيقي، وإلا فتعارض جديد
+        const [closed] = await tx
+          .select({ id: buyerInviteConflicts.id })
+          .from(buyerInviteConflicts)
+          .where(and(eq(buyerInviteConflicts.organizationId, orgId), sql`lower(${buyerInviteConflicts.email}) = lower(${input.email})`, eq(buyerInviteConflicts.state, 'dismissed')))
+          .orderBy(desc(buyerInviteConflicts.resolvedAt))
+          .limit(1);
+        const values = { existingUserId: taken.id, role: input.role, invitedBy: p.userId, inviteExpiresAt: sql`now() + interval '24 hours'` };
+        const [c] = closed
+          ? await tx
+              .update(buyerInviteConflicts)
+              .set({ ...values, state: 'pending', resolvedAt: null, resolvedBy: null, updatedAt: sql`now()` })
+              .where(eq(buyerInviteConflicts.id, closed.id))
+              .returning({ id: buyerInviteConflicts.id, expiresAt: buyerInviteConflicts.inviteExpiresAt })
+          : await tx
+              .insert(buyerInviteConflicts)
+              .values({ ...values, organizationId: orgId, email: input.email })
+              .returning({ id: buyerInviteConflicts.id, expiresAt: buyerInviteConflicts.inviteExpiresAt });
         await audit(tx, p.userId, 'buyer_member.invite_conflict', taken.id, { organization_id: orgId, target_user_id: taken.id, conflict_id: c!.id, role: input.role });
-        return { conflict: true as const, userId: c!.id, expiresAt: iso(c!.expiresAt)! };
+        return { conflict: true, userId: c!.id, expiresAt: iso(c!.expiresAt)! };
       }
       const created = await this.createMember(tx, orgId, p.userId, input.email, input.role, passwordHash, token);
       await audit(tx, p.userId, 'buyer_member.invited', created.userId, { organization_id: orgId, target_user_id: created.userId, role: input.role });
-      return { conflict: false as const, ...created };
+      return { conflict: false, ...created };
     });
-    // التعارض لا يُسلَّم لأحد؛ رمزه عشوائي لا يُحفظ، ويظهر حيث يظهر رمز الدعوة الناجحة وحده
-    const invite = member.conflict
+    return this.answer(orgId, token, member);
+  }
+
+  /**
+   * إعادة إصدار رمز دعوة لم يكتمل قبولها (قرار المنسّق 2026-11-15): للمدعو وحده. الرمز السابق يبطل، ومن استعمله ولم يُكمل
+   * ربط التحقق بخطوتين يبدأ من جديد بالرمز الجديد. لا مقعد إضافي.
+   */
+  async reissueInvitation(p: Principal, orgId: string, userId: string): Promise<BuyerMember & InviteToken> {
+    this.assertVisible(p, orgId);
+    if (!UUID.test(userId)) throw ApiError.notFound();
+    const token = randomToken(32);
+    const issued = await this.db.transaction(async (tx) => {
+      const current = await this.invited(tx, orgId, userId, 'invited');
+      return this.reissue(tx, p.userId, orgId, current.member, token);
+    });
+    return this.answer(orgId, token, issued);
+  }
+
+  /**
+   * إلغاء دعوة لم يكتمل قبولها (قرار المنسّق 2026-11-15): رمزها يبطل ومقعدها يتحرر وتخرج من قائمة الأعضاء. الحساب الذي
+   * لم يدخل قط يبقى بلا دور في المؤسسة وعضويته معلّقة، فلا يدخل ولا يُكمل برمز قديم، ودعوة بريده من جديد تعيده.
+   */
+  async cancelInvitation(p: Principal, orgId: string, userId: string): Promise<void> {
+    this.assertVisible(p, orgId);
+    if (!UUID.test(userId)) throw ApiError.notFound();
+    await this.db.transaction(async (tx) => {
+      const { org, member } = await this.invited(tx, orgId, userId, 'cancelled');
+      if (member.conflict) {
+        const [c] = await tx
+          .update(buyerInviteConflicts)
+          .set({ state: 'dismissed', resolvedAt: sql`now()`, resolvedBy: p.userId, updatedAt: sql`now()` })
+          .where(eq(buyerInviteConflicts.id, userId))
+          .returning({ existing: buyerInviteConflicts.existingUserId });
+        await audit(tx, p.userId, 'buyer_member.invitation_cancelled', c!.existing, { organization_id: orgId, target_user_id: c!.existing, conflict_id: userId });
+      } else {
+        await expireOpenTokens(tx, userId);
+        await resetCredentials(tx, userId);
+        await tx.update(users).set({ membershipSuspended: true }).where(eq(users.id, userId));
+        await tx.delete(userRoles).where(and(eq(userRoles.userId, userId), inArray(userRoles.role, [...BUYER_ROLES])));
+        await audit(tx, p.userId, 'buyer_member.invitation_cancelled', userId, { organization_id: orgId, target_user_id: userId });
+      }
+      if (org.status === 'active') assertAdminRemains(await memberRows(tx, orgId));
+    });
+  }
+
+  /** العضو المدعو تحت قفل مؤسسته: المجهول 404، ومن أكمل القبول أو عُلّق `invalid_transition`. */
+  private async invited(tx: Tx, orgId: string, userId: string, to: string): Promise<{ org: OrgRow; member: MemberRow }> {
+    const [org] = await tx.select().from(buyerOrganizations).where(eq(buyerOrganizations.id, orgId)).for('update');
+    if (!org) throw ApiError.notFound();
+    const member = (await memberRows(tx, orgId)).find((m) => m.id === userId);
+    if (!member) throw ApiError.notFound();
+    if (member.status !== 'invited') {
+      throw new ApiError(409, 'invalid_transition', `Only an invitation that has not been accepted can change; this member is ${member.status}.`, { from: member.status, to });
+    }
+    return { org, member };
+  }
+
+  /** رمز جديد لمدعو قائم، ودوره إن طُلب غيره. التعارض يُمدَّد أجله وحده: لا رمز له يُسلَّم. */
+  private async reissue(tx: Tx, actorId: string, orgId: string, member: MemberRow, token: string, role?: BuyerRole): Promise<Issued> {
+    const changed = role !== undefined && role !== member.role;
+    if (member.conflict) {
+      const [c] = await tx
+        .update(buyerInviteConflicts)
+        .set({ ...(changed ? { role } : {}), inviteExpiresAt: sql`now() + interval '24 hours'`, updatedAt: sql`now()` })
+        .where(eq(buyerInviteConflicts.id, member.id))
+        .returning({ existing: buyerInviteConflicts.existingUserId, expiresAt: buyerInviteConflicts.inviteExpiresAt });
+      await audit(tx, actorId, 'buyer_member.invitation_reissued', c!.existing, { organization_id: orgId, target_user_id: c!.existing, conflict_id: member.id });
+      return { conflict: true, userId: member.id, expiresAt: iso(c!.expiresAt)! };
+    }
+    if (changed) {
+      await tx
+        .update(userRoles)
+        .set({ role })
+        .where(and(eq(userRoles.userId, member.id), inArray(userRoles.role, [...BUYER_ROLES])));
+      await audit(tx, actorId, 'buyer_member.role_changed', member.id, { organization_id: orgId, target_user_id: member.id, from: member.role, to: role });
+    }
+    await expireOpenTokens(tx, member.id);
+    // كل وصول وسرّ معلّق من محاولة لم تكتمل يُمحى: السرّ لا يُعرض ثانية، والدورة تبدأ من أولها
+    await resetCredentials(tx, member.id);
+    const request = await this.issueToken(tx, member.id, actorId, token);
+    await audit(tx, actorId, 'buyer_member.invitation_reissued', member.id, { organization_id: orgId, target_user_id: member.id });
+    return { conflict: false, userId: member.id, ...request };
+  }
+
+  /** الرد بشكل واحد للحساب الحقيقي والتعارض: التعارض لا يُسلَّم لأحد؛ رمزه عشوائي لا يُحفظ، ويظهر حيث يظهر رمز الدعوة وحده. */
+  private async answer(orgId: string, token: string, issued: Issued): Promise<BuyerMember & InviteToken> {
+    const invite = issued.conflict
       ? this.delivery.outOfBand
         ? {}
-        : { invite_token: randomToken(32), invite_token_expires_at: member.expiresAt }
-      : await this.handOver(token, member);
-    const [row] = (await memberRows(this.db, orgId)).filter((m) => m.id === member.userId);
+        : { invite_token: randomToken(32), invite_token_expires_at: issued.expiresAt }
+      : await this.handOver(token, issued);
+    const [row] = (await memberRows(this.db, orgId)).filter((m) => m.id === issued.userId);
     return { ...toMember(row!), ...invite };
   }
 
@@ -247,11 +370,7 @@ export class BuyersService {
           if (suspend) await revokeAllAccess(tx, userId);
         }
       }
-      // لا تبقى مؤسسة فعّالة بلا مدير نشط
-      if (org.status === 'active') {
-        const admins = (await memberRows(tx, orgId)).filter((m) => m.role === 'buyer_admin' && m.status !== 'suspended');
-        if (admins.length === 0) throw new ApiError(409, 'last_buyer_admin', 'An active organization keeps at least one active buyer administrator.');
-      }
+      if (org.status === 'active') assertAdminRemains(await memberRows(tx, orgId));
       if (input.role !== current.role) {
         await audit(tx, p.userId, 'buyer_member.role_changed', userId, { organization_id: orgId, target_user_id: userId, from: current.role, to: input.role });
       }
@@ -279,8 +398,8 @@ export class BuyersService {
   private async read(executor: Executor, id: string): Promise<{ org: BuyerOrganization; etag: string }> {
     const [org] = await executor.select().from(buyerOrganizations).where(eq(buyerOrganizations.id, id));
     if (!org) throw ApiError.notFound();
-    const active = await activeCounts(executor, [id]);
-    return { org: toDto(org, active.get(id) ?? 0), etag: await etagOf(executor, id) };
+    const [active, occupied] = await Promise.all([activeCounts(executor, [id]), occupiedCounts(executor, [id])]);
+    return { org: toDto(org, active.get(id) ?? 0, occupied.get(id) ?? 0), etag: await etagOf(executor, id) };
   }
 
   /** حساب المشتري: كلمة سر لا يعرفها أحد، ودور بنطاق مؤسسته، وطلب استعادة معتمد برمز تعيين لمرة واحدة (24 ساعة). */
@@ -289,7 +408,7 @@ export class BuyersService {
     orgId: string,
     actorId: string,
     email: string,
-    role: (typeof BUYER_ROLES)[number],
+    role: BuyerRole,
     passwordHash: string,
     token: string,
   ): Promise<{ userId: string; recoveryRequestId: string; expiresAt: string }> {
@@ -309,6 +428,11 @@ export class BuyersService {
       throw err;
     }
     await tx.insert(userRoles).values({ userId, role, scopeKind: 'organization', scopeId: orgId, grantedBy: actorId });
+    return { userId, ...(await this.issueToken(tx, userId, actorId, token)) };
+  }
+
+  /** طلب استعادة معتمد يحمل رمز الدعوة ببصمته (24 ساعة). */
+  private async issueToken(tx: Tx, userId: string, actorId: string, token: string): Promise<{ recoveryRequestId: string; expiresAt: string }> {
     const [request] = await tx
       .insert(recoveryRequests)
       .values({
@@ -322,7 +446,7 @@ export class BuyersService {
         resetTokenExpiresAt: sql`now() + interval '24 hours'`,
       })
       .returning({ id: recoveryRequests.id, expiresAt: recoveryRequests.resetTokenExpiresAt });
-    return { userId, recoveryRequestId: request!.id, expiresAt: iso(request!.expiresAt)! };
+    return { recoveryRequestId: request!.id, expiresAt: iso(request!.expiresAt)! };
   }
 
   /**
@@ -374,6 +498,41 @@ async function activeCounts(executor: Executor, ids: string[]): Promise<Map<stri
   return new Map(rows.map((r) => [r.org!, Number(r.n)]));
 }
 
+/** المقاعد المشغولة لكل مؤسسة (كما يحسبها seatsTaken)، لعدّاد الملف. */
+async function occupiedCounts(executor: Executor, ids: string[]): Promise<Map<string, number>> {
+  if (ids.length === 0) return new Map();
+  const [accounts, conflicts] = await Promise.all([
+    executor
+      .select({ org: users.organizationId, n: count() })
+      .from(users)
+      .where(and(inArray(users.organizationId, ids), ne(users.status, 'suspended'), eq(users.membershipSuspended, false)))
+      .groupBy(users.organizationId),
+    executor
+      .select({ org: buyerInviteConflicts.organizationId, n: count() })
+      .from(buyerInviteConflicts)
+      .where(and(inArray(buyerInviteConflicts.organizationId, ids), eq(buyerInviteConflicts.state, 'pending')))
+      .groupBy(buyerInviteConflicts.organizationId),
+  ]);
+  const totals = new Map<string, number>();
+  for (const r of [...accounts, ...conflicts]) totals.set(r.org!, (totals.get(r.org!) ?? 0) + Number(r.n));
+  return totals;
+}
+
+/** لا تبقى مؤسسة فعّالة بلا مدير غير معلّق. */
+function assertAdminRemains(rows: MemberRow[]): void {
+  if (!rows.some((m) => m.role === 'buyer_admin' && m.status !== 'suspended')) {
+    throw new ApiError(409, 'last_buyer_admin', 'An active organization keeps at least one active buyer administrator.');
+  }
+}
+
+/** رموز الدعوة التي لم تُستعمل تنتهي: لا يُكمل بها أحد بعد إعادة الإصدار أو الإلغاء. */
+async function expireOpenTokens(tx: Tx, userId: string): Promise<void> {
+  await tx
+    .update(recoveryRequests)
+    .set({ state: 'expired', resetTokenHash: null, resetTokenExpiresAt: null })
+    .where(and(eq(recoveryRequests.userId, userId), eq(recoveryRequests.state, 'approved'), isNull(recoveryRequests.completedAt)));
+}
+
 const emailTaken = () => new ApiError(409, 'bad_request', 'An account with this email exists.', { fields: ['/email'] });
 
 /** المقاعد المشغولة: كل حساب غير معلّق في المؤسسة، وكل دعوة متعارضة لم تُعلَّق ولم تُحسم. */
@@ -389,20 +548,13 @@ async function seatsTaken(executor: Executor, orgId: string): Promise<number> {
   return Number(n) + Number(c);
 }
 
-async function existingAccount(executor: Executor, email: string): Promise<{ id: string; organizationId: string | null } | undefined> {
+/** الحساب القائم بهذا البريد. `neverAccepted`: دعوة لم يكتمل قبولها (لم يدخل قط وما زال تعيين كلمته مطلوبًا) وحسابه غير معلّق على المنصة. */
+async function existingAccount(executor: Executor, email: string): Promise<{ id: string; organizationId: string | null; neverAccepted: boolean } | undefined> {
   const [u] = await executor
-    .select({ id: users.id, organizationId: users.organizationId })
+    .select({ id: users.id, organizationId: users.organizationId, status: users.status, resetRequired: users.credentialResetRequired, lastLoginAt: users.lastLoginAt })
     .from(users)
     .where(sql`lower(${users.email}) = lower(${email})`);
-  return u;
-}
-
-async function openConflict(executor: Executor, orgId: string, email: string): Promise<boolean> {
-  const [c] = await executor
-    .select({ id: buyerInviteConflicts.id })
-    .from(buyerInviteConflicts)
-    .where(and(eq(buyerInviteConflicts.organizationId, orgId), sql`lower(${buyerInviteConflicts.email}) = lower(${email})`, ne(buyerInviteConflicts.state, 'dismissed')));
-  return !!c;
+  return u ? { id: u.id, organizationId: u.organizationId, neverAccepted: u.status === 'active' && u.resetRequired && u.lastLoginAt === null } : undefined;
 }
 
 interface MemberRow {
@@ -463,7 +615,7 @@ function toMember(r: MemberRow): BuyerMember {
   return { user_id: r.id, email: r.email, role: r.role as BuyerMember['role'], status: r.status, totp_enabled: r.totpEnabled, created_at: iso(r.createdAt)! };
 }
 
-function toDto(o: OrgRow, activeMembers: number): BuyerOrganization {
+function toDto(o: OrgRow, activeMembers: number, occupiedSeats: number): BuyerOrganization {
   return {
     id: o.id,
     legal_name: o.legalName,
@@ -473,6 +625,8 @@ function toDto(o: OrgRow, activeMembers: number): BuyerOrganization {
     seats: o.seats,
     status: o.status as Status,
     active_members: activeMembers,
+    // من يشغل مقعدًا ولم يصر نشطًا بعد: النشطون والمدعوون معًا هم المقاعد المشغولة
+    invited_members: Math.max(0, occupiedSeats - activeMembers),
     verified_at: iso(o.verifiedAt),
     // يظهر مع rejected وحدها (ADR 0104)، فيبقى الملف المقروء صالحًا جسمًا لـ PUT في غيرها
     ...(o.rejectionReason ? { rejection_reason: o.rejectionReason as RejectionReason } : {}),

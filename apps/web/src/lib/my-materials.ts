@@ -9,8 +9,12 @@ export type MineFilter = "all" | "video" | "photos" | "urgent";
 export type MineGrouping = "coverage" | "type";
 export const mineFilters: MineFilter[] = ["all", "video", "photos", "urgent"];
 
-/** ما يحتاج المراسل أن يفعل فيه شيئًا: طلب تعديل من المشرف، أو رفع فشل ويُعاد. */
-export const needsAction = (material: Material) => material.editorial_state === "needs_changes" || material.technical_state === "failed";
+/** مادة لم يصل لها ملف: المسار الفني ما زال ينتظر، ولا أصل ولا نسخة هاتف بين ملفاتها. تُكمَل من صفحتها. */
+export const awaitingFile = (material: Material) => material.technical_state === "pending" && !material.files.some(file => file.kind === "original" || file.kind === "proxy");
+/** لا أصل متحقَّقًا منه بعد (لم يصل ملف، أو فشل رفعه): صاحبها يرفع ملفها من صفحتها. */
+export const lacksOriginal = (material: Material) => awaitingFile(material) || material.technical_state === "failed";
+/** ما يحتاج المراسل أن يفعل فيه شيئًا: طلب تعديل من المشرف، أو رفع فشل ويُعاد، أو مادة لم يصل ملفها. */
+export const needsAction = (material: Material) => material.editorial_state === "needs_changes" || lacksOriginal(material);
 
 export function matchesFilter(material: Material, filter: MineFilter) {
   if (filter === "all") return true;
@@ -95,9 +99,20 @@ export function cardMedia(material: Material): { kind: "sensitive" } | { kind: "
   return file ? { kind: "thumbnail", file } : { kind: "icon", photos: material.material_types.includes("photos") };
 }
 
-/** الأعداد فوق المعرض: كل المواد، وما يحتاج إجراءً، وما ينتظر المراجعة، والمعتمد. */
-export function mineCounts(items: Material[]) {
-  const reviewing = ["inbox", "acknowledged", "reviewing"], approved = ["accepted", "in_production", "final_review", "published"];
-  return { all: items.length, action: items.filter(needsAction).length, reviewing: items.filter(item => reviewing.includes(item.editorial_state)).length,
-    approved: items.filter(item => approved.includes(item.editorial_state)).length };
+export type MineBucket = "action" | "reviewing" | "approved" | "rejected";
+export const mineBuckets: MineBucket[] = ["action", "reviewing", "approved", "rejected"];
+/**
+ * فئة واحدة لكل مادة، والأربع تغطي الكل: المرفوضة نهائية فتسبق، ثم المعتمدة (مقبولة فما بعدها)، ثم ما ينتظر المراسل، وما بقي عند المكتب
+ * قيد المراجعة. فالمجموع عدد المواد، ولا مادة تُعدّ مرتين.
+ */
+export function mineBucket(material: Material): MineBucket {
+  if (material.editorial_state === "rejected") return "rejected";
+  if (["accepted", "in_production", "final_review", "published"].includes(material.editorial_state)) return "approved";
+  return needsAction(material) ? "action" : "reviewing";
+}
+/** الأعداد فوق المعرض بالفئات الأربع، ومعها المجموع. */
+export function mineCounts(items: Material[]): Record<MineBucket | "all", number> {
+  const counts = { all: items.length, action: 0, reviewing: 0, approved: 0, rejected: 0 };
+  for (const item of items) counts[mineBucket(item)]++;
+  return counts;
 }

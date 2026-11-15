@@ -14,8 +14,11 @@ import type { Readable } from 'node:stream';
 export interface ObjectStorage {
   head(bucket: string, key: string): Promise<{ size: number } | null>;
   read(bucket: string, key: string): Promise<Readable>;
-  /** رابط قراءة موقّع (SigV4 في الاستعلام) لكائن واحد؛ غير متاح = لا روابط تنزيل. */
-  presignGet?(bucket: string, key: string, expiresSeconds: number, now?: Date): string;
+  /**
+   * رابط قراءة موقّع (SigV4 في الاستعلام) لكائن واحد؛ غير متاح = لا روابط تنزيل. `download`: اسم ملف يُحفظ به، فيحمل الرابط
+   * `response-content-disposition=attachment` موقّعًا معه (`downloadName`)، والمتصفح ينزّله ولا يفتحه مكان الصفحة.
+   */
+  presignGet?(bucket: string, key: string, expiresSeconds: number, now?: Date, download?: string): string;
   /** يحذف رفعًا ملغى من التخزين المؤقت: أجزاء tusd غير المجمّعة وكائنه وملفاته الجانبية (`.info` و`.part`). */
   removeUpload?(bucket: string, key: string): Promise<void>;
 }
@@ -84,7 +87,7 @@ export class S3ObjectStorage implements ObjectStorage {
   }
 
   /** عنوان المسار على النقطة العامة (S3_PUBLIC_ENDPOINT، وإلا S3_ENDPOINT): التوقيع يشمل المضيف فيُوقَّع بما يطلبه العميل. */
-  presignGet(bucket: string, key: string, expiresSeconds: number, now = new Date()): string {
+  presignGet(bucket: string, key: string, expiresSeconds: number, now = new Date(), download?: string): string {
     const base = new URL(this.opts.publicEndpoint ?? this.opts.endpoint);
     return presignS3Get({
       origin: base.origin,
@@ -95,8 +98,33 @@ export class S3ObjectStorage implements ObjectStorage {
       secretAccessKey: this.opts.secretAccessKey,
       expiresSeconds,
       now,
+      ...(download ? { query: { 'response-content-disposition': attachment(download) } } : {}),
     });
   }
+}
+
+const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+/** `Content-Disposition` للتنزيل باسم ملف آمن (حروف لاتينية وأرقام و`._-` وحدها): لا اقتباس يُكسر ولا ترميز يُساء فهمه. */
+export function attachment(name: string): string {
+  if (!SAFE_NAME.test(name)) throw new Error('unsafe download name');
+  return `attachment; filename="${name}"`;
+}
+
+const EXTENSIONS: Record<string, string> = {
+  'video/mp4': 'mp4', 'video/quicktime': 'mov', 'audio/mp4': 'm4a', 'image/jpeg': 'jpg', 'image/png': 'png',
+  'application/zip': 'zip', 'text/vtt': 'vtt', 'application/json': 'json', 'text/plain': 'txt',
+};
+/**
+ * اسم الملف المنزَّل: اسم الكائن في التخزين بلا امتداده (`circulated-vertical`، `proxy-480p`) أو نوع الملف حين لا اسم له (مفتاح رفع
+ * بالمعرّف وحده)، ثم أول ثمانية من معرّف المادة، ثم الامتداد من الاسم وإلا من نوع المحتوى. بالمعرّفات والكلمات الثابتة وحدها كمفتاح التخزين:
+ * لا عنوان مادة ولا اسم مراسل ولا مكان.
+ */
+export function downloadName(storageKey: string, fallback: string, materialId: string, mimeType?: string | null): string {
+  const leaf = storageKey.split('/').pop() ?? '';
+  const named = /^([a-z0-9]+(?:-[a-z0-9]+)*)\.([a-z0-9]{2,5})$/i.exec(leaf);
+  const stem = named ? named[1]! : fallback.replace(/_/g, '-');
+  const ext = named ? named[2]!.toLowerCase() : EXTENSIONS[(mimeType ?? '').split(';')[0]!.trim().toLowerCase()];
+  return `${stem}-${materialId.replace(/-/g, '').slice(0, 8)}${ext ? `.${ext}` : ''}`;
 }
 
 const rfc3986 = (s: string) => encodeURIComponent(s).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
@@ -112,6 +140,8 @@ export function presignS3Get(a: {
   secretAccessKey: string;
   expiresSeconds: number;
   now: Date;
+  /** معاملات استعلام إضافية تدخل التوقيع (`response-content-disposition`). */
+  query?: Record<string, string>;
 }): string {
   const amzDate = a.now.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
   const date = amzDate.slice(0, 8);
@@ -123,6 +153,7 @@ export function presignS3Get(a: {
     ['X-Amz-Date', amzDate],
     ['X-Amz-Expires', String(a.expiresSeconds)],
     ['X-Amz-SignedHeaders', 'host'],
+    ...Object.entries(a.query ?? {}),
   ];
   const canonicalQuery = query
     .map(([k, v]) => [rfc3986(k), rfc3986(v)])

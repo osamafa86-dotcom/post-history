@@ -6,7 +6,7 @@ import { DB, type Database } from '../database/database.module';
 import { auditLog, materialFiles } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import type { Principal } from '../identity/principal';
-import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
+import { downloadName, OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
 import { canEditMaterial, canSeeProduced, clientProxyHidden, EDITOR_ONLY_KINDS, findScoped, PRODUCTION_ONLY_KINDS } from './material-store';
 import { canRequestRender, renderNotAllowed, renderStateFailures } from './renders.service';
 
@@ -33,7 +33,7 @@ export class FileDownloadService {
     const material = UUID.test(fileId) ? await findScoped(this.db, p, materialId) : undefined;
     if (!material || !this.storage.presignGet) throw ApiError.notFound();
     const [file] = await this.db
-      .select({ id: materialFiles.id, kind: materialFiles.kind, storageKey: materialFiles.storageKey, derivedFromId: materialFiles.derivedFromId })
+      .select({ id: materialFiles.id, kind: materialFiles.kind, storageKey: materialFiles.storageKey, derivedFromId: materialFiles.derivedFromId, mimeType: materialFiles.mimeType })
       .from(materialFiles)
       .where(
         and(
@@ -55,7 +55,8 @@ export class FileDownloadService {
     // مشتقات العامل في حاوية الوسائط، والوكيل المرفوع من العميل في حاوية الرفع
     const bucket = file.derivedFromId ? this.config.S3_BUCKET_MEDIA : this.config.S3_BUCKET_UPLOADS;
     const now = new Date();
-    const url = this.storage.presignGet(bucket, file.storageKey, TTL_SECONDS, now);
+    // تنزيل لا عرض: الرابط يحمل اسم الملف (`attachment`)، فلا تنتقل الصفحة إلى الملف الخام. البث إلى المشغّل يمرّ بالـBFF ولا ينقل الترويسة.
+    const url = this.storage.presignGet(bucket, file.storageKey, TTL_SECONDS, now, downloadName(file.storageKey, file.kind, materialId, file.mimeType));
     const sensitive = EDITOR_ONLY_KINDS.includes(file.kind);
     await this.db.insert(auditLog).values({
       actorId: p.userId,

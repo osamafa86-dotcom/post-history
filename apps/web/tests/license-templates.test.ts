@@ -26,6 +26,8 @@ describe("license template input", () => {
     expect(templateInput(template as unknown as Record<string, unknown>)).toEqual(template);
     expect(templateInput({ ...template, type: "exclusive_temporary", term_days: 30, exclusivity_hours: 48 })).not.toBeNull();
     expect(templateInput({ ...template, territory: { kind: "countries", countries: ["PS", "JO"] } })).not.toBeNull();
+    // رمز من حرفين غير معيّن في ISO 3166-1 ليس بلدًا
+    expect(templateInput({ ...template, territory: { kind: "countries", countries: ["PS", "ZZ"] } })).toBeNull();
     const bad: Record<string, unknown>[] = [
       { name: { ar: "اسم", en: " " } }, { terms: { ar: "x" } }, { usage_media: [] }, { deliverables: ["transcript"] }, { prohibitions: ["resale"] },
       { type: "editorial_term", term_days: null }, { type: "exclusive_temporary", term_days: 30, exclusivity_hours: null }, { exclusivity_hours: 48 },

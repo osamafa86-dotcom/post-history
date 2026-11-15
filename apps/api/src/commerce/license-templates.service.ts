@@ -75,9 +75,13 @@ export class LicenseTemplatesService {
   }
 }
 
-/** ما يقوله المخطط شرطًا بين الحقول ولا تقوله JSON Schema: الإقليم، والمدة، والحصرية. */
+/**
+ * ما يقوله المخطط شرطًا بين الحقول ولا تقوله JSON Schema: الإقليم، والمدة، والحصرية، وتسليم شيء فعلًا: النسخة المنتجة لا تُسلَّم قبل نوعها
+ * في العقد (#278، فتُسقط عند إصدار الترخيص)، فقالب لا يسلّم غيرها يبيع ترخيصًا بلا حزمة.
+ */
 function check(input: LicenseTemplateInput): void {
   const fields: string[] = [];
+  if (!input.deliverables.some((d) => d !== 'produced')) fields.push('/deliverables');
   const countries = input.territory.countries;
   if (input.territory.kind === 'countries' ? !countries?.length : countries !== undefined) fields.push('/territory/countries');
   if (TERM_REQUIRED.has(input.type) && (input.term_days === undefined || input.term_days === null)) fields.push('/term_days');

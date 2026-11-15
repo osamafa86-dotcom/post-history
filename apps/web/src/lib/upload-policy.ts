@@ -2,8 +2,9 @@
 // أدوار الرفع من الحاسوب كما في `x-roles` للعقد بعد #193 (createMaterial وcreateUploadSession وcreateWebIngestToken)؛ يطابقها contract-drift.
 export const uploadRoles = ["reporter", "supervisor", "producer", "editor_in_chief"] as const;
 export const sha256Hex = /^[0-9a-f]{64}$/;
-// ملفات الكاميرات الشائعة؛ الخادم وعامل الوسائط هما الحكم النهائي على صلاحية الملف.
-export const cameraExtensions = [".mov", ".mxf", ".mp4", ".m4v", ".mts", ".m2ts", ".avi", ".mkv", ".wav", ".jpg", ".jpeg", ".heic", ".png", ".dng", ".arw", ".cr3", ".nef"] as const;
+// ملفات الكاميرات التي يقرؤها عامل الوسائط: حاويات الفيديو في قائمته البيضاء (ومنها MXF)، وصور JPEG وPNG (تُصنع لها مصغّرة)، وHEIC
+// وRAW (أصول تُحفظ بلا معاينة). لا AVI: لا مسار يقرؤه. الخادم وعامل الوسائط هما الحكم النهائي على صلاحية الملف.
+export const cameraExtensions = [".mov", ".mxf", ".mp4", ".m4v", ".mts", ".m2ts", ".mkv", ".wav", ".jpg", ".jpeg", ".heic", ".png", ".dng", ".arw", ".cr3", ".nef"] as const;
 export const fingerprintBytes = 1048576;
 export const hashSliceBytes = 8 * 1048576;
 // تجديد رمز ingest قبل انتهائه بدقيقة: عمره ≤ 10 دقائق، والجزء الواحد قد يستغرق دقائق على شبكة ضعيفة.
@@ -61,4 +62,34 @@ export function uploadNeed({ types, tags, sensitivity }: { types: readonly strin
   if (!tags.length) return "tags";
   if (sensitivity.gate === null) return "sensitivity";
   return sensitivityFlags(sensitivity) ? null : "followups";
+}
+
+// حدود الحقول الأساسية كما يتحقق منها الـBFF (server/uploads.ts): العنوان بنقاط الترميز بعد قصّ طرفيه.
+export const titleLimits = { min: 5, max: 80 } as const;
+export type BaseField = "title" | "governorate" | "city" | "shot_at" | "pseudonym";
+/** الحقول الأساسية الخاطئة بترتيب النموذج، فتأخذ كل واحدة رسالتها تحتها والأولى التركيز. وقت التصوير لا يكون في المستقبل. */
+export function baseErrors(base: { title: string; governorate: string; city: string; shot_at: string; mode: string; pseudonym: string }, now: number): BaseField[] {
+  const length = Array.from(base.title.trim()).length, errors: BaseField[] = [];
+  if (length < titleLimits.min || length > titleLimits.max) errors.push("title");
+  if (!base.governorate.trim()) errors.push("governorate");
+  if (!base.city.trim()) errors.push("city");
+  if (base.shot_at && !(Date.parse(base.shot_at) <= now)) errors.push("shot_at");
+  if (base.mode === "pseudonym" && !base.pseudonym.trim()) errors.push("pseudonym");
+  return errors;
+}
+
+/** فشل إنشاء جلسة الرفع: 401 جلسة الدخول، و404 و409 جلسة لم تعد تقبل، و5xx عطل عندنا لا رفض، وما عداها رفض. */
+export function createFailure(status: number): "session_revoked" | "not_accepted" | "storage_error" | "rejected" {
+  return status === 401 ? "session_revoked" : status === 404 || status === 409 ? "not_accepted" : status >= 500 ? "storage_error" : "rejected";
+}
+
+/**
+ * بطاقة واحدة لكل ملف في «رفعات لم تكتمل»: جلسة الخادم تأخذ سجلها المحلي بمعرّفها، وإن لم يحفظه السجل (ضاع ردّ إنشائها) فبالمادة والنوع
+ * والحجم. السجل لا يُعطى لجلستين، وما بقي بلا جلسة سجلات لم تبدأ على الخادم.
+ */
+export function pairSessions<S extends { id: string; material_id: string; kind: string; size_bytes: number }, R extends { session_id?: string; material_id: string; create: { kind: string; size_bytes: number } }>(sessions: readonly S[], records: readonly R[]): { pairs: { session: S; record: R | null }[]; orphans: R[] } {
+  const free = [...records], take = (match: (record: R) => boolean) => { const index = free.findIndex(match); return index < 0 ? null : free.splice(index, 1)[0]; };
+  const known = sessions.map(session => ({ session, record: take(record => record.session_id === session.id) }));
+  const pairs = known.map(pair => pair.record ? pair : { session: pair.session, record: take(record => !record.session_id && record.material_id === pair.session.material_id && record.create.kind === pair.session.kind && record.create.size_bytes === pair.session.size_bytes) });
+  return { pairs, orphans: free };
 }

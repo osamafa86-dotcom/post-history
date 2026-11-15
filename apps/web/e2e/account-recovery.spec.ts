@@ -64,7 +64,7 @@ test("P1 signs in with a passkey, says so when it is cancelled, refused or off, 
 
 test("Security lists passkeys, adds one after a password and code re-check, revokes with a confirmation, and shows backup codes once", async ({ page, request }) => {
   await authenticator(page, fresh); await login(page, "reviewer");
-  await page.getByRole("button", { name: new RegExp(`^${ar.shell.account}`) }).click(); await page.getByTestId("menu-security").click();
+  await page.getByRole("button", { name: new RegExp(ar.shell.account) }).click(); await page.getByTestId("menu-security").click();
   await expect(page.getByRole("heading", { level: 1, name: ar.security.title })).toBeVisible();
   const passkeys = page.getByTestId("passkeys");
   await expect(passkeys.getByRole("listitem")).toHaveCount(1); await expect(passkeys.getByRole("listitem")).toContainText("حاسوب المكتب"); await expect(passkeys.getByRole("listitem")).toContainText(ar.security.synced);
@@ -132,7 +132,8 @@ test("Backup codes after the session ended go to sign-in and say why", async ({ 
   await login(page, "reviewer"); await page.goto("/ar/security");
   await page.getByTestId("generate-codes").click(); const form = page.getByTestId("codes-form");
   await form.getByLabel(ar.security.password).fill("synthetic-password"); await form.getByLabel(ar.security.totp).fill("123456");
-  await request.post(`${api}/__test/revoke`); await form.getByRole("button", { name: ar.security.generate }).click();
+  // طلبات الهيكل الأولى (الجلسة وعدّاد الجرس) تنتهي قبل الإبطال: الإرسال نفسه هو الذي يكتشف انتهاء الجلسة، لا طلب في الخلفية يسبقه
+  await page.waitForLoadState("networkidle"); await request.post(`${api}/__test/revoke`); await form.getByRole("button", { name: ar.security.generate }).click();
   await expect(page).toHaveURL(/\/ar\/login\?reason=revoked&next=%2Far%2Fsecurity$/); await expect(page.getByText(ar.revoked)).toBeVisible();
   expect(await writes(request, "/v1/auth/recovery-codes")).toHaveLength(0);
 });
