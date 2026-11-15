@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { Me } from "@/lib/types";
 import { hasRole } from "@/lib/review";
 import { uuid } from "@/lib/query";
-import { approvalInput, recoveryApprovers, recoveryStartInput, resetLinkInput, resetLinkIssuers, safeApproval, safeCodes, safeCodeStatus, safeResetLink } from "@/lib/recovery-policy";
+import { approvalInput, recoveryApprovers, recoveryStartInput, resetLinkInput, resetLinkIssuers, safeApproval, safeCodes, safeCodeStatus, safeRecoveryRequest, safeResetLink } from "@/lib/recovery-policy";
 import { assertionInput, registrationInput, safeChallenge, safePasskey, safePasskeyList, stepUpInput } from "@/lib/passkey-policy";
 import { assertSession, clientAddress, requireOk, upstream, type Api } from "./auth";
 import type { WebConfig } from "./config";
@@ -66,14 +66,24 @@ const resetLinkPath = (path: string) => { const match = /^users\/([^/]+)\/passwo
 const approvePath = (path: string) => { const match = /^auth\/recovery\/([^/]+)\/approve$/.exec(path); return match && uuid.test(match[1]) ? match[1] : null; };
 const passkeyPath = (path: string) => { const match = /^me\/passkeys\/([^/]+)$/.exec(path); return match && uuid.test(match[1]) ? match[1] : null; };
 
-export const accountReadPath = (path: string) => path === "auth/recovery-codes" || path === "me/passkeys";
+const requestPath = (path: string) => { const match = /^auth\/recovery\/([^/]+)$/.exec(path); return match && uuid.test(match[1]) ? match[1] : null; };
+export const accountReadPath = (path: string) => path === "auth/recovery-codes" || path === "me/passkeys" || !!requestPath(path);
 export function accountWritePath(path: string, method: string) {
   if (method === "POST") return ["auth/recovery-codes", "auth/passkeys/registration-options", "me/passkeys"].includes(path) || !!resetLinkPath(path) || !!approvePath(path);
   return method === "DELETE" && !!passkeyPath(path);
 }
 
-export async function accountRead(request: Request, path: string, api: Api) {
+export async function accountRead(request: Request, path: string, api: Api, me?: Me) {
   if (new URL(request.url).search) throw new WebError(400, "request_failed");
+  const request_ = requestPath(path);
+  if (request_) {
+    // قراءة طلب الاستعادة لمن يملك اعتماده وحده؛ الخادم يحكم النطاق، و`404` لما ليس للمتصل
+    if (!me || !hasRole(me, ...recoveryApprovers)) throw new WebError(403, "request_failed");
+    const result = await api.GET("/auth/recovery/{id}", { params: { path: { id: request_ } } });
+    if (result.response.status === 403) throw new WebError(403, result.error?.code === "admin_quorum_required" ? "admin_quorum_required" : "request_failed");
+    const data = requireOk(result);
+    return json(checked(() => safeRecoveryRequest(data)));
+  }
   if (path === "auth/recovery-codes") { const data = requireOk(await api.GET("/auth/recovery-codes")); return json(checked(() => safeCodeStatus(data))); }
   const result = await api.GET("/me/passkeys");
   if (result.response.status === 404) throw passkeysOff();

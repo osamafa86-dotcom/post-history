@@ -2,6 +2,7 @@ import type { components } from "@/generated/schema";
 import { cleanText, validText } from "./admin-text";
 import { uuid } from "./query";
 import { validToken } from "./invite-policy";
+import { workName } from "./work-name";
 
 /**
  * استعادة الحساب بلا بريد (ADR 0107، 0108) بقواعد العقد: الرمز الاحتياطي base32 بحروف كبيرة (يُكتب بمسافات أو شرطات أو بحروف صغيرة
@@ -57,6 +58,23 @@ export function safeApproval(value: components["schemas"]["RecoveryApproval"] | 
   if (!value || !uuid.test(value.id)) throw new Error("approval");
   const token = typeof value.reset_token === "string" && validToken(value.reset_token) ? value.reset_token : undefined;
   return { id: value.id, ...(token ? { reset_token: token } : {}), reset_token_expires_at: time(value.reset_token_expires_at) ? value.reset_token_expires_at : null };
+}
+
+export type RecoveryRequestView = components["schemas"]["RecoveryRequestDetail"];
+const requestStates = ["pending_approval", "approved", "rejected", "expired"] as const;
+const roleNames = ["system_admin", "editor_in_chief", "supervisor", "producer", "finance", "reporter", "rights_officer", "buyer_admin", "buyer_member"] as const;
+const officeLabel = (value: unknown) => typeof value === "string" && validText(value, 120) ? value : null;
+/**
+ * طلب الاستعادة كما يقرؤه من يملك اعتماده (ADR 0117، تعديل 2026-11-15) بقائمة بيضاء: حالته وأوقاته، وما يعرّف الحساب داخليًا (المعرّف واسم
+ * العمل والأدوار والمكتب). لا بريد ولا اسم قانوني ولا رمز يمرّ ولو أعاده الخادم. ما لا يوثق به يُحذف، وما يلزم لتسمية الطلب يُرفض ناقصًا.
+ */
+export function safeRecoveryRequest(value: RecoveryRequestView | undefined): RecoveryRequestView {
+  const account = value?.account;
+  if (!value || !uuid.test(value.id) || !(requestStates as readonly string[]).includes(value.state) || !time(value.created_at) || !account || typeof account !== "object" || !uuid.test(account.user_id)) throw new Error("recovery request");
+  const name = account.office_name, ar = officeLabel(name?.ar), en = officeLabel(name?.en);
+  return { id: value.id, state: value.state, created_at: value.created_at, expires_at: time(value.expires_at) ? value.expires_at : null, approved_by: typeof value.approved_by === "string" && uuid.test(value.approved_by) ? value.approved_by : null,
+    account: { user_id: account.user_id, work_name: workName(account.work_name), roles: [...new Set(Array.isArray(account.roles) ? account.roles.filter(role => (roleNames as readonly string[]).includes(role)) : [])],
+      office_id: typeof account.office_id === "string" && uuid.test(account.office_id) ? account.office_id : null, office_name: ar !== null && en !== null ? { ar, en } : null } };
 }
 
 export function safeCodeStatus(value: RecoveryCodeStatus | undefined): RecoveryCodeStatus {

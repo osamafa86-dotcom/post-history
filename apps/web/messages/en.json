@@ -2299,6 +2299,26 @@
       "submit": "Approve request",
       "confirmTitle": "Approve recovery",
       "confirmEffect": "The account holder is signed out of every device now and their passkeys stop working. They cannot sign in until they set a new password and link their authenticator app with the link you hand them.",
+      "account": "Account",
+      "roles": "Roles",
+      "office": "Office",
+      "noOffice": "No office",
+      "requestedAt": "Requested",
+      "expiresAt": "Request expires",
+      "loadFailed": "The request could not be loaded. Try again.",
+      "state": "Request state",
+      "states": {
+        "pending_approval": "Awaiting approval",
+        "approved": "Approved",
+        "rejected": "Rejected",
+        "expired": "Expired"
+      },
+      "closed": {
+        "approved": "This request was approved and cannot be approved twice. The reset link was shown once to whoever approved it.",
+        "rejected": "This request was rejected. The account owner starts a new recovery if needed.",
+        "expired": "This request expired before it was approved. The account owner starts a new recovery."
+      },
+      "confirmAccount": "You are approving the recovery of the account “{name}”.",
       "confirm": "Approve and show the link",
       "approved": "The request is approved. The account holder finishes the reset with the link you handed them.",
       "conflict": "This request is no longer waiting: it was approved, rejected or has expired. The link is not shown a second time.",

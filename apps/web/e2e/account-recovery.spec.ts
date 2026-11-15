@@ -171,26 +171,32 @@ test("A1 issues a one-time reset link after a confirmation with its effect, show
   await again.setViewportSize({ width: 375, height: 812 }); await noSideScroll(again); await again.screenshot({ path: ".artifacts/reset-invalid-en-375.png", fullPage: true }); await again.close();
 });
 
-test("A supervisor approves a recovery request from its notification with a note, sees the link once, and a second approval is refused", async ({ page, request }) => {
+test("A supervisor sees which account a request belongs to, approves it with a note, sees the link once, and the approved request shows its state", async ({ page, request }) => {
   await request.post(`${api}/__test/recovery-notice`); await login(page, "reviewer");
   await page.goto("/ar/notifications"); await page.getByTestId("notification").filter({ hasText: ar.shell.bell.kinds.account }).click();
   await page.getByRole("link", { name: ar.notice.openRequest, exact: true }).click();
   await expect(page).toHaveURL(/\/ar\/recovery-requests\/70000000-0000-4000-8000-000000000001$/);
   await expect(page.getByRole("heading", { level: 1, name: ar.recovery.approve.title })).toBeVisible();
+  // الصفحة تسمّي الحساب: اسم العمل والدور والمكتب وحالة الطلب، بلا بريد ولا اسم قانوني
+  const account = page.getByTestId("recovery-account"); await expect(account).toContainText("مراسل الجنوب"); await expect(account).toContainText(ar.topbar.roles.reporter); await expect(account).toContainText("مكتب غزة");
+  await expect(page.getByTestId("recovery-state")).toHaveText(ar.recovery.approve.states.pending_approval); await expect(page.locator("body")).not.toContainText("never-display-canary");
+  expect(await (await page.request.get("/api/bff/auth/recovery/70000000-0000-4000-8000-000000000001")).text()).not.toContain("never-display-canary");
   const approve = page.getByTestId("approve-recovery"); await expect(approve).toBeDisabled();
   await page.getByLabel(ar.recovery.approve.note).fill("لقاء في المكتب"); await approve.click();
   await expect(page.getByTestId("confirm-approval")).toContainText(ar.recovery.approve.confirmEffect);
+  await expect(page.getByTestId("confirm-account")).toHaveText(ar.recovery.approve.confirmAccount.replace("{name}", "مراسل الجنوب"));
   await page.getByTestId("confirm-approval").getByRole("button", { name: ar.recovery.approve.confirm }).click();
   const shown = page.getByTestId("approval-reset-link"); await expect(shown.getByTestId("reset-link")).toHaveText(/\/ar\/reset-password#token=synthetic-reset-token-\d{12}$/);
   await page.screenshot({ path: ".artifacts/recovery-approval-ar.png", fullPage: true });
   await shown.getByRole("button", { name: ar.recovery.link.done }).click(); await expect(page.getByTestId("approval-done")).toHaveText(ar.recovery.approve.approved);
   expect((await (await request.get(`${api}/__test/auth`)).json()).requests["70000000-0000-4000-8000-000000000001"]).toBe("approved");
-  await page.reload(); await page.getByLabel(ar.recovery.approve.note).fill("مرة ثانية"); await page.getByTestId("approve-recovery").click();
-  await page.getByTestId("confirm-approval").getByRole("button", { name: ar.recovery.approve.confirm }).click();
-  await expect(page.getByTestId("approval-error")).toHaveText(ar.recovery.approve.conflict); await expect(page.getByTestId("approval-reset-link")).toHaveCount(0);
-  await page.goto("/ar/recovery-requests/70000000-0000-4000-8000-000000000002"); await page.getByLabel(ar.recovery.approve.note).fill("اتصال بالرقم المعروف");
-  await page.getByTestId("approve-recovery").click(); await page.getByTestId("confirm-approval").getByRole("button", { name: ar.recovery.approve.confirm }).click();
-  await expect(page.getByTestId("approval-error")).toHaveText(ar.recovery.approve.adminQuorum);
+  // الطلب المعتمَد يُعرض بحاله لا بنموذج الاعتماد، ولا يُعرض الرابط ثانية
+  await page.reload(); await expect(page.getByTestId("recovery-state")).toHaveText(ar.recovery.approve.states.approved); await expect(page.getByTestId("recovery-closed")).toHaveText(ar.recovery.approve.closed.approved);
+  await expect(page.getByTestId("approve-recovery")).toHaveCount(0); await expect(page.getByTestId("approval-reset-link")).toHaveCount(0); await expect(page.getByTestId("recovery-account")).toContainText("مراسل الجنوب");
+  // طلب حساب مدير نظام: يُقال سببه من أول الصفحة، بلا نموذج
+  await page.goto("/ar/recovery-requests/70000000-0000-4000-8000-000000000002");
+  await expect(page.getByTestId("approval-error")).toHaveText(ar.recovery.approve.adminQuorum); await expect(page.getByTestId("approve-recovery")).toHaveCount(0);
+  await page.goto("/ar/recovery-requests/70000000-0000-4000-8000-000000000009"); await expect(page.getByTestId("approval-error")).toHaveText(ar.recovery.approve.notFound);
   await page.setViewportSize({ width: 375, height: 812 }); await noSideScroll(page);
 });
 
