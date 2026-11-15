@@ -1,4 +1,5 @@
 "use client";
+import { reporterOnly } from "@/lib/home-page";
 import { governorateName } from "@/lib/format";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
@@ -120,7 +121,8 @@ export function Inbox({ locale }: { locale: Locale }) {
     <p>{search ? (tabbed.length ? w.noResultsHint.replace("{count}", plural(tabbed.length, m.counts.materials, locale)) : w.noResultsNone) : w.noFilterResults}</p></EmptyState>;
   else list = <EmptyState icon="inbox" testId="inbox-empty" title={w.emptyTitle} actions={staff ? <Link prefetch={false} className="button" href={`/${locale}/board`}>{m.board.title}</Link> : null}>
     <p>{w.emptyBody}{lastArrival && now ? <> {w.lastArrival.replace("{time}", humanDuration(now - Date.parse(lastArrival), locale))}</> : null}</p></EmptyState>;
-  if (!reader || forbidden) return <NoAccess locale={locale} me={me} title={m.inbox} denied={w.denied} />;
+  // المراسل بلا دور مكتب صفحته «موادي»: وارد الطاقم ليس له ولو قرأ موادّه من القائمة نفسها.
+  if (!reader || reporterOnly(me) || forbidden) return <NoAccess locale={locale} me={me} title={m.inbox} denied={reporterOnly(me) ? w.deniedReporter : w.denied} />;
   return <>
     {staff && waiting && <UrgentAlert locale={locale} items={unreceived} beyond={beyond} now={now} disabled={disconnected} done={retry} showAll={() => { setQuery(urgentWaiting); setPage(null); setCursors([undefined]); }} />}
     <div className="page-head inbox-head">

@@ -249,8 +249,8 @@ test("a reporter starts on «my materials»: the desk inbox is not in their navi
   await login(page, "reporter", "ar"); await expect(page).toHaveURL(/\/ar\/my-materials$/);
   const nav = page.getByRole("navigation", { name: ar.workspace });
   await expect(nav.locator("[aria-current='page']")).toHaveAccessibleName(ar.mine.nav); await expect(nav.getByRole("link", { name: ar.inbox, exact: true })).toHaveCount(0);
-  // وارد المكتب ما زال مقروءًا له بعنوانه، بلا إنذار المشرف وصوته
-  await page.goto("/ar/inbox"); await expect(page.getByTestId("material-row").first()).toBeVisible(); await expect(page.getByTestId("urgent-alert")).toHaveCount(0);
+  // وارد المكتب ليس له ولو بعنوانه: صفحة «خارج صلاحيات دورك» تدلّه على موادّه، بلا صفوف ولا إنذار المشرف وصوته
+  await page.goto("/ar/inbox"); await expect(page.getByTestId("no-access")).toContainText(ar.shell.inbox.deniedReporter); await expect(page.getByTestId("material-row")).toHaveCount(0); await expect(page.getByTestId("urgent-alert")).toHaveCount(0);
   // الضابط: المشرف يبدأ من الوارد ويرى الإنذار فيه. الصفحة تُترك أولًا كي لا يسابق خروجُها التلقائي عند زوال الجلسة الانتقالَ التالي
   await page.goto("about:blank"); await page.context().clearCookies(); await login(page, "reviewer", "ar");
   await expect(page).toHaveURL(/\/ar\/inbox$/); await expect(page.getByTestId("urgent-alert")).toBeVisible();

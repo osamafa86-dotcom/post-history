@@ -18,7 +18,7 @@ import { numberLocale } from "@/lib/format";
 import { webUnavailable } from "@/lib/forms";
 import { clearDraft, lastPlace, readDraft, rememberPlace, saveDraft } from "@/lib/upload-draft";
 
-type Row = { key: string; record: string; name: string; materialId: string; update: UploadUpdate; control?: UploadControl; verifiedAt?: number };
+export type Row = { key: string; record: string; name: string; materialId: string; update: UploadUpdate; control?: UploadControl; verifiedAt?: number };
 type Base = { title: string; types: MaterialType[]; tags: string[]; governorate: string; city: string; shot_at: string; priority: Material["priority"]; sensitivity: SensitivityAnswers; mode: Material["display_name"]["mode"]; pseudonym: string };
 // نسخة الإرسال نفسها للمكتب (reporter-v2.md): لا نوع ولا جواب حساسية مسبق، والوسوم إلزامية.
 const initial: Base = { title: "", types: [], tags: [], governorate: "", city: "", shot_at: "", priority: "normal", sensitivity: noSensitivityAnswer, mode: "network", pseudonym: "" };
@@ -228,7 +228,7 @@ function Heading({ locale }: { locale: Locale }) {
 }
 
 /** بطاقة الرفع (U2): اسم الملف وحجمه، والشريط، ثم سطر المرحلة بأيقونة وكلمة، ثم أفعالها. اسم الملف لصاحب الجلسة وحده ولا يُنقل إلى سجل. */
-function UploadRow({ row, online, locale, pick }: { row: Row; online: boolean; locale: Locale; pick: () => void }) {
+export function UploadRow({ row, online, locale, pick }: { row: Row; online: boolean; locale: Locale; pick: () => void }) {
   const m = messages[locale], u = m.upload, { update, control } = row, { stage, tone, icon } = uploadStage(update, online);
   const receipt = update.session?.receipt_number, delivered = stage === "verified" && !!receipt;
   const value = update.phase === "hashing" ? update.hashed : update.sent, pct = percent(value, update.total), moving = ["hashing", "uploading", "paused"].includes(update.phase);

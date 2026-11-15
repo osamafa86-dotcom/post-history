@@ -36,7 +36,7 @@ export function MediaPreview({ locale, material }: { locale: Locale; material: M
   const strip = proxy ? thumbnails : thumbnails.filter(file => file !== poster);
   return <section className="preview-panel" aria-label={m.preview}>
     {proxy ? <PreviewAsset key={`${material.id}-${proxy.id}`} locale={locale} materialId={material.id} file={proxy} />
-      : <div className="preview-empty" data-testid="preview-preparing">{poster ? <PreviewAsset key={`${material.id}-${poster.id}`} locale={locale} materialId={material.id} file={poster} /> : <span className="play-mark" aria-hidden="true" />}<p role="status">{m.previewPreparing}</p></div>}
+      : <div className="preview-empty" data-testid="preview-preparing">{poster ? <PreviewAsset key={`${material.id}-${poster.id}`} locale={locale} materialId={material.id} file={poster} /> : <span className="play-mark" aria-hidden="true" />}<p role="status">{material.files.some(file => file.kind === "original" || file.kind === "proxy") ? m.previewPreparing : m.previewNoFile}</p></div>}
     {strip.length > 0 && <div className="thumbnails">{strip.map(file => <PreviewAsset key={`${material.id}-${file.id}`} locale={locale} materialId={material.id} file={file} />)}</div>}
   </section>;
 }

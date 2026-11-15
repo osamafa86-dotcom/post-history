@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { handle } from "../src/server/handler";
 import type { WebConfig } from "../src/server/config";
 import type { Material, Notification } from "../src/lib/types";
-import { arabicFold, cardMedia, coverageTitle, dayKind, durationLabel, groupMaterials, matchesFilter, mineCounts, monthName, needsAction, timeSections, type MineGroup } from "../src/lib/my-materials";
+import { arabicFold, cardMedia, coverageTitle, dayKind, durationLabel, groupMaterials, matchesFilter, awaitingFile, lacksOriginal, mineBucket, mineCounts, monthName, needsAction, timeSections, type MineGroup } from "../src/lib/my-materials";
 import { inTab, knownType, notificationKind, notificationTypes } from "../src/lib/notification-kind";
 import { safeNotification } from "../src/lib/privacy";
 import { archiveGovernorates, filterArchive, noFilters } from "../src/lib/archive";
@@ -40,6 +40,20 @@ describe("«موادي» mirrors the iOS gallery (ADR 0089 on the web, ADR 0103)
     expect([photo, urgent].filter(x => matchesFilter(x, "video")).map(x => x.id)).toEqual(["u"]);
     expect([photo, urgent].filter(x => matchesFilter(x, "urgent")).map(x => x.id)).toEqual(["u"]);
     expect(needsAction(changes)).toBe(true); expect(mineCounts([photo, changes]).action).toBe(1);
+  });
+  it("puts every material in exactly one of four buckets, so the counts add up to the total", () => {
+    const rejected = item({ id: "r", editorial_state: "rejected", technical_state: "failed" }), failed = item({ id: "f", technical_state: "failed" });
+    const empty = item({ id: "e", technical_state: "pending", files: [] }), accepted = item({ id: "a", editorial_state: "accepted" }), waiting = item({ id: "w", editorial_state: "acknowledged" });
+    expect([rejected, failed, empty, accepted, waiting].map(mineBucket)).toEqual(["rejected", "action", "action", "approved", "reviewing"]);
+    const counts = mineCounts([rejected, failed, empty, accepted, waiting, item({ id: "c", editorial_state: "needs_changes" })]);
+    expect(counts).toEqual({ all: 6, action: 3, reviewing: 1, approved: 1, rejected: 1 });
+    expect(counts.action + counts.reviewing + counts.approved + counts.rejected).toBe(counts.all);
+  });
+  it("a material whose file never arrived is not «in review»: it waits for its owner", () => {
+    const empty = item({ technical_state: "pending", files: [] });
+    expect(awaitingFile(empty)).toBe(true); expect(lacksOriginal(empty)).toBe(true); expect(needsAction(empty)).toBe(true);
+    expect(awaitingFile(item({ technical_state: "pending" }))).toBe(false);
+    expect(lacksOriginal(item({ technical_state: "failed" }))).toBe(true); expect(lacksOriginal(item({ technical_state: "verified" }))).toBe(false);
   });
   it("asks no cloud thumbnail for a sensitive or unknown-sensitivity material, and only a verified thumbnail otherwise", () => {
     const thumb = { ...material().files[0], id: "30000000-0000-4000-8000-000000000009", kind: "thumbnail" as const, state: "verified" as const };

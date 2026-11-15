@@ -4,7 +4,7 @@ import en from "../messages/en.json" with { type: "json" };
 const l = ar.listing, first = "20000000-0000-4000-8000-000000000001";
 async function login(page: Page, role: string, locale: "ar" | "en" = "ar") {
   const m = locale === "ar" ? ar : en;
-  await page.goto(`/${locale}/login`); await page.getByLabel(m.email).fill(`${role}@example.test`); await page.getByLabel(m.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(m.totp, { exact: true }).fill("123456"); await page.getByRole("button", { name: m.signIn, exact: true }).click(); await page.waitForURL(/\/(inbox|my-materials)$/); if (!page.url().endsWith("/inbox")) await page.goto(page.url().replace(/[^/]+$/, "inbox")); await expect(page.getByTestId("material-row")).toHaveCount(50);
+  await page.goto(`/${locale}/login`); await page.getByLabel(m.email).fill(`${role}@example.test`); await page.getByLabel(m.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(m.totp, { exact: true }).fill("123456"); await page.getByRole("button", { name: m.signIn, exact: true }).click(); await page.waitForURL(/\/(inbox|my-materials)$/); if (page.url().endsWith("/inbox")) await expect(page.getByTestId("material-row")).toHaveCount(50); else await expect(page.getByTestId("mine-row").first()).toBeVisible();
 }
 /** يفتح حوار التحويل إن لم يكن مفتوحًا ويختار المسار والهدف والسبب؛ زر التأكيد يُسمّى بالحالة الهدف. */
 async function choose(page: Page, to: string, reason: string, track?: "editorial" | "rights" | "technical") {
@@ -44,7 +44,7 @@ test("the rights officer drafts a listing, then lists it once the rights are sel
 });
 test("the listing stays hidden from roles outside the contract and read-only for the editor in chief", async ({ page, context }) => {
   await login(page, "reporter"); await page.goto(`/ar/materials/${first}`);
-  await expect(page.getByRole("heading", { name: ar.shell.material.nextStep, exact: true })).toBeVisible(); await expect(page.getByRole("region", { name: l.title })).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible(); await expect(page.getByRole("heading", { name: ar.shell.material.nextStep, exact: true })).toHaveCount(0); await expect(page.getByRole("region", { name: l.title })).toHaveCount(0);
   await context.clearCookies(); await login(page, "chief", "en"); await page.goto(`/en/materials/${first}`);
   const panel = page.getByRole("region", { name: en.listing.title }); await expect(panel.getByText(en.listing.none)).toBeVisible();
   await expect(panel.getByRole("button", { name: en.listing.create })).toHaveCount(0);
