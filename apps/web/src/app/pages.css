@@ -162,6 +162,9 @@ html:has(.public-shell.store-face), body:has(.public-shell.store-face) { backgro
 /* P2 وP3: الحقول الثلاثة صفوفًا بخط فاصل، وسطر ما لا تعرضه الصفحة. */
 .verify-main .verify-card { inline-size: min(440px, 100%); margin-inline: auto; display: grid; gap: var(--v2-space-5); text-align: start; padding: var(--v2-space-7); }
 .verify-head { display: flex; align-items: center; gap: var(--v2-space-4); }
+.verify-form { display: grid; gap: var(--v2-space-3); }
+.verify-form input { inline-size: 100%; }
+.verify-another { margin: 0; font-size: var(--v2-font-label-size); }
 .verify-head h1 { margin: 0; font-size: var(--v2-font-title-size); line-height: var(--v2-font-title-line); }
 .verify-head p { margin: var(--v2-space-1) 0 0; font-size: var(--v2-font-label-size); }
 .verify-seal { display: grid; place-items: center; flex: none; inline-size: 48px; block-size: 48px; border-radius: var(--v2-radius-full); background: var(--v2-c-bg-sunken); color: var(--v2-c-text-secondary); }

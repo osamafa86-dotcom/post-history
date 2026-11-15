@@ -343,7 +343,7 @@ const server = createServer(async (req, res) => {
   if (verification && req.method === "GET") {
     const found = [...issued.values()].find(l => l.license_number === verification[1]);
     if (!found) return send({ code: "not_found" }, 404);
-    return send({ license_number: found.license_number, status: found.status, license_type: "editorial_single", title: found.title, usage_media: ["web"], territory: { kind: "worldwide" }, valid_from: "2026-10-21T10:00:00Z", valid_until: null, exclusive_until: null, organization: "never-display-canary" });
+    return send({ license_number: found.license_number, status: found.status, license_type: "editorial_single", title: found.title, usage_media: ["web"], territory: { kind: "worldwide" }, valid_from: "2026-10-21T10:00:00Z", valid_until: found.valid_until ?? null, exclusive_until: null, organization: "never-display-canary" });
   }
   // قبول الدعوة (S5): رمز الدعوة يُستهلك مرة واحدة، والجلسة الناتجة مقيّدة حتى تأكيد TOTP. أي رمز آخر 401 بلا تفريق.
   if (url.pathname === "/v1/auth/recovery/complete" && req.method === "POST" && !String(body.reset_token ?? "").startsWith(resetTokenPrefix)) {

@@ -1,5 +1,6 @@
 "use client";
 import type { components } from "@/generated/schema";
+import { countryName } from "@/lib/countries";
 import { formatDate, messages, plural, type Locale } from "@/lib/i18n";
 import { formatMoney, localized, type LicenseType, type Localized, type Price } from "@/lib/store-format";
 import { delivered } from "@/lib/license-policy";
@@ -38,7 +39,7 @@ function OfferTerms({ terms, locale }: { terms: components["schemas"]["LicenseTe
   const t = messages[locale].templates, s = messages[locale].store, list = messages[locale].shell.listSeparator;
   return <details className="offer-terms"><summary>{t.terms}</summary><p>{localized(terms.terms, locale)}</p><dl className="metadata">{[
     [t.usage, terms.usage_media.map(u => t.usageNames[u]).join(list)],
-    [t.territory, terms.territory.kind === "worldwide" ? t.worldwide : terms.territory.countries?.join(", ")],
+    [t.territory, terms.territory.kind === "worldwide" ? t.worldwide : (terms.territory.countries ?? []).map(code => countryName(code, locale)).join(list)],
     [s.termDaysLabel, terms.term_days ?? messages[locale].notAvailable],
     [s.exclusivityHoursLabel, terms.exclusivity_hours ?? messages[locale].notAvailable],
     [t.deliverables, delivered(terms.deliverables).map(d => t.deliverableNames[d]).join(list)],
