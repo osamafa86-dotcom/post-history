@@ -337,8 +337,9 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
         const hint = owners.includes('reservation') ? ' Use the reservation endpoint.' : '';
         throw new ApiError(403, 'forbidden_scope', `This role may not perform this transition.${hint}`);
       }
-      // الإعادة من الإنتاج إلى accepted تحرر الحجز
-      const extra = body.track === 'editorial' && body.to === 'accepted' && from === 'in_production' ? { reservedBy: null, reservedAt: null } : {};
+      // الإعادة من الإنتاج إلى accepted تحرر الحجز، والنشر يحرره كذلك: المادة المنشورة لا يحجزها أحد (قرار المنسّق 2026-11-15)
+      const frees = (body.to === 'accepted' && from === 'in_production') || body.to === 'published';
+      const extra = body.track === 'editorial' && frees ? { reservedBy: null, reservedAt: null } : {};
       await applyTransition(tx, m, { track: body.track, to: body.to, reason: body.reason, actorId: p.userId, noteTimecodeMs: body.note_timecode_ms }, extra);
       return m.id;
     });

@@ -34,6 +34,13 @@ export async function refundRead(request: Request, id: string, api: Api, me: Me)
   return json({ items: requireOk(await api.GET("/orders/{order_id}/refunds", { params: { path: { order_id: id } } })).items.map(safeRefund) });
 }
 
+/** تأكيد استرداد معلّق مع المزوّد التجريبي وحده، للمالية ومدير النظام (قرار المنسّق 2026-11-15)؛ الخادم يحكم بالمزوّد والحالة. */
+export async function sandboxRefundConfirm(request: Request, orderId: string, refundId: string, api: Api, me: Me, header: { "Idempotency-Key": string }) {
+  if (request.method !== "POST" || !uuid.test(orderId) || !uuid.test(refundId)) throw new WebError(405, "request_failed");
+  if (!hasRole(me, ...refundWriters)) throw new WebError(403, "request_failed");
+  return json(safeRefund(requireOk(await api.POST("/orders/{order_id}/refunds/{refund_id}/sandbox-confirmation", { params: { path: { order_id: orderId, refund_id: refundId }, header } }))));
+}
+
 /** الاسترداد ببنود الطلب وسبب مرمّز؛ المبلغ يحسبه الخادم من الأسعار المجمّدة، والنجاح من الإشعار الموقّع وحده. */
 export async function refundWrite(request: Request, id: string, api: Api, me: Me, body: Record<string, unknown>, header: { "Idempotency-Key": string }) {
   if (request.method !== "POST" || !uuid.test(id)) throw new WebError(405, "request_failed");

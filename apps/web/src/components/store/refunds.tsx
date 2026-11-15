@@ -9,15 +9,17 @@ import type { Order } from "@/lib/order-policy";
 import { refundable, refundReaders, refundReasons, refundWriters, type Refund, type RefundCreate } from "@/lib/refund-policy";
 import { useUser } from "../session-boundary";
 import { ActionStatus } from "../action-status";
-import { ScrollRegion } from "../scroll-region";
 
 const tone = (status: Refund["status"]) => status === "succeeded" ? "good" : status === "failed" ? "bad" : "";
 
-/** استردادات الطلب ببنودها: المالية تختار البنود وسببًا مرمّزًا، ولا مبلغ حر؛ النجاح يصل من الإشعار الموقّع. */
+/**
+ * استردادات الطلب ببنودها: المالية تختار البنود وسببًا مرمّزًا، ولا مبلغ حر؛ النجاح يصل من الإشعار الموقّع. ومع المزوّد التجريبي وحده تؤكد المالية
+ * المعلّق بزر صريح (الإشعار الموقّع نفسه، قرار المنسّق 2026-11-15)، لا آليًا. الجدول بطاقات على الهاتف (`store-table`).
+ */
 export function RefundsPanel({ locale, order, onChange }: { locale: Locale; order: Order; onChange: () => void }) {
   const m = messages[locale], r = m.refunds, me = useUser(), readable = hasRole(me, ...refundReaders), writer = hasRole(me, ...refundWriters), mutation = useMutation();
   const [items, setItems] = useState<Refund[] | null>(null), [error, setError] = useState(false), [attempt, setAttempt] = useState(0);
-  const [selected, setSelected] = useState<string[]>([]), [reason, setReason] = useState<RefundCreate["reason_code"] | "">("");
+  const [selected, setSelected] = useState<string[]>([]), [reason, setReason] = useState<RefundCreate["reason_code"] | "">(""), confirming = useMutation();
   useEffect(() => {
     if (!readable) return;
     const controller = new AbortController();
@@ -29,6 +31,10 @@ export function RefundsPanel({ locale, order, onChange }: { locale: Locale; orde
   const title = (id: string) => { const item = order.items.find(i => i.id === id); return item ? localized(item.title, locale) : id; };
   const open = items ? refundable(order, items) : [], chosen = open.filter(i => selected.includes(i.id));
   const amount = { amount_minor: chosen.reduce((sum, i) => sum + i.price.amount_minor, 0), currency: order.total.currency };
+  async function confirm(refund: Refund) {
+    const ok = await confirming.run(`sandbox-confirm:${refund.id}`, header => browserApi().POST("/orders/{order_id}/refunds/{refund_id}/sandbox-confirmation", { params: { path: { order_id: order.id, refund_id: refund.id }, header } }));
+    if (ok) { setAttempt(n => n + 1); onChange(); }
+  }
   async function submit() {
     if (!chosen.length || !reason) return;
     const body: RefundCreate = { order_item_ids: chosen.map(i => i.id), reason_code: reason };
@@ -39,9 +45,11 @@ export function RefundsPanel({ locale, order, onChange }: { locale: Locale; orde
   return <section className="card" aria-labelledby="refunds-title"><h2 id="refunds-title">{r.title}</h2>
     {error ? <><p role="alert">{m.error}</p><button className="secondary" onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></>
       : !items ? <p role="status">{m.loading}</p>
-      : <>{!items.length ? <p className="muted">{r.empty}</p> : <ScrollRegion className="table-scroll" label={r.historyLabel} testId="refund-history"><table><thead><tr>{[r.created, r.items, r.amount, r.reason, r.status].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
-          <tbody>{items.map(refund => <tr key={refund.id} data-testid="refund-row"><td>{formatDate(refund.created_at, locale)}</td><td>{refund.order_item_ids.map(title).join("، ")}</td><td dir="ltr">{formatMoney(refund.amount, locale)}</td><td>{r.reasons[refund.reason_code]}</td><td><span className={`badge ${tone(refund.status)}`}>{r.statuses[refund.status]}</span></td></tr>)}</tbody></table></ScrollRegion>}
-        {items.some(i => i.status === "pending") && <p className="muted">{r.pendingHelp}</p>}
+      : <>{!items.length ? <p className="muted">{r.empty}</p> : <div className="store-table" role="region" aria-label={r.historyLabel} data-testid="refund-history"><table><thead><tr>{[r.created, r.items, r.amount, r.reason, r.status].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+          <tbody>{items.map(refund => <tr key={refund.id} data-testid="refund-row"><td data-label={r.created}>{formatDate(refund.created_at, locale)}</td><td data-label={r.items}>{refund.order_item_ids.map(title).join(m.shell.listSeparator)}</td><td data-label={r.amount}><bdi dir="ltr">{formatMoney(refund.amount, locale)}</bdi></td><td data-label={r.reason}>{r.reasons[refund.reason_code]}</td><td data-label={r.status}><span className={`badge ${tone(refund.status)}`}>{r.statuses[refund.status]}</span>
+            {writer && refund.status === "pending" && refund.provider === "sandbox" && <button className="secondary small" data-testid="sandbox-confirm" disabled={confirming.busy} onClick={() => void confirm(refund)}>{r.sandboxConfirm}</button>}</td></tr>)}</tbody></table></div>}
+        <ActionStatus status={confirming.status === 200 ? 0 : confirming.status} locale={locale} />
+        {items.some(i => i.status === "pending") && <p className="muted">{writer && items.some(i => i.status === "pending" && i.provider === "sandbox") ? r.sandboxHelp : r.pendingHelp}</p>}
         {writer && (open.length ? <form className="rule-form" noValidate onSubmit={e => { e.preventDefault(); void submit(); }}>
           <fieldset className="check-group"><legend>{r.choose}</legend>{open.map(item => <label key={item.id} className="check"><input type="checkbox" checked={selected.includes(item.id)} onChange={() => setSelected(list => list.includes(item.id) ? list.filter(id => id !== item.id) : [...list, item.id])} />{localized(item.title, locale)} <small className="muted">{localized(item.license_name, locale)} · <bdi dir="ltr">{formatMoney(item.price, locale)}</bdi></small></label>)}</fieldset>
           <label>{r.reason}<select value={reason} onChange={e => setReason(e.target.value as RefundCreate["reason_code"] | "")}><option value="">{m.choose}</option>{refundReasons.map(code => <option key={code} value={code}>{r.reasons[code]}</option>)}</select></label>

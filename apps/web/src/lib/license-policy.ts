@@ -14,6 +14,10 @@ export const prohibitions = ["resale", "advertising", "ai_training", "re_editing
 export const currencies = ["USD", "ILS"] as const satisfies readonly components["schemas"]["Currency"][];
 export const termRequired: readonly LicenseType[] = ["editorial_term", "exclusive_temporary"];
 export const templateLimits = { text: 4000, countries: 250, termMin: 1, termMax: 3650, hoursMin: 24, hoursMax: 168, amountMax: 100000000000 } as const;
+/** حدّ الكتابة في النموذج لاسم القالب وعنوان الإدراج: يظهران في بطاقة وسطر جدول. حدّ الواجهة وحدها؛ العقد يقبل حتى `templateLimits.text`. */
+export const shortTextMax = 120;
+/** ما يُسلَّم فعلًا من بنود القالب: النسخة المنتجة لا تُسلَّم قبل نوعها في العقد (#278)، فلا تُكتب للمشتري ولا تُعرض في النموذج لقالب جديد. */
+export const delivered = <T extends string>(list: readonly T[]) => list.filter(item => item !== "produced");
 
 const keys = ["type", "name", "terms", "usage_media", "territory", "term_days", "exclusivity_hours", "deliverables", "attribution", "prohibitions", "base_price", "enabled"];
 const subset = <T>(value: unknown, allowed: readonly T[], min = 0): value is T[] => Array.isArray(value) && value.length >= min && new Set(value).size === value.length && value.every(v => (allowed as readonly unknown[]).includes(v));

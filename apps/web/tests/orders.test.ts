@@ -63,7 +63,8 @@ describe("orders BFF", () => {
     expect(result.status).toBe(201); expect(calls[0].headers.get("Idempotency-Key")).toBe(key); expect(await result.text()).not.toContain("canary");
     for (const user of [finance, rights]) { const denied = await call("orders", { user, body }); expect(denied.result.status).toBe(403); expect(denied.calls).toHaveLength(0); }
     const conflict = await call("orders", { body, upstream: () => Response.json({ code: "price_changed", message: "canary" }, { status: 409 }) });
-    expect(conflict.result.status).toBe(409); expect(await conflict.result.text()).not.toContain("canary");
+    // رمز الرفض من القائمة البيضاء يمرّ برمزه وحده، بلا رسالة الخادم
+    expect(conflict.result.status).toBe(409); expect(await conflict.result.json()).toEqual({ code: "price_changed" });
   });
   it("reads orders for buyers and finance and validates filters", async () => {
     const list = await call("orders?status=paid", { method: "GET", user: finance, upstream: () => Response.json({ items: [order], next_cursor: null }) });
