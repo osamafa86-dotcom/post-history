@@ -44,3 +44,21 @@ export async function closeMaterialTasks(tx: Tx, materialId: string, types: read
       ),
     );
 }
+
+/**
+ * يغلق مهام طلب استعادة الحساب عند كل من وصلته حين يُعتمد: أحدٌ تولّاه، فلا تبقى «لم يُقرّ» ولا تُصعَّد. إشعار المعتمِد نفسه يصير
+ * مقروءًا مُقرًّا، وإشعارات غيره تبقى بحالتها في صناديقهم ومهمتها مغلقة بلا موعد تصعيد. في معاملة الاعتماد.
+ */
+export async function closeRecoveryTasks(tx: Tx, recoveryRequestId: string, actorId: string): Promise<void> {
+  const own = sql`${notifications.userId} = ${actorId}`;
+  await tx
+    .update(notifications)
+    .set({
+      state: sql`CASE WHEN ${own} THEN 'acknowledged' ELSE ${notifications.state} END`,
+      readAt: sql`CASE WHEN ${own} THEN COALESCE(${notifications.readAt}, now()) ELSE ${notifications.readAt} END`,
+      acknowledgedAt: sql`CASE WHEN ${own} THEN now() ELSE ${notifications.acknowledgedAt} END`,
+      assignmentState: 'acknowledged',
+      escalateAt: null,
+    })
+    .where(and(eq(notifications.recoveryRequestId, recoveryRequestId), eq(notifications.assignmentState, 'assigned'), isNull(notifications.acknowledgedAt)));
+}
