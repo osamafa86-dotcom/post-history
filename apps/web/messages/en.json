@@ -232,6 +232,20 @@
       "fixer": "Fixer"
     },
     "note": "Note",
+    "systemNotes": {
+      "originalReceived": "The original file reached storage in full",
+      "proxyReceived": "The light copy reached storage in full",
+      "producedReceived": "The produced copy reached storage in full",
+      "checksumVerified": "The original's checksum matches what was sent at upload",
+      "checksumMismatch": "The original's checksum does not match what was sent at upload",
+      "invalidFile": "The original's size does not match what was declared at upload",
+      "storageError": "The original could not be read from storage",
+      "accessRevoked": "The upload was stopped because its owner's access was revoked",
+      "cancelledByOwner": "The material's owner cancelled the original's upload",
+      "editedAfterApproval": "Its details were edited after approval",
+      "reservedForProduction": "Reserved for production",
+      "acknowledgedFromNotification": "Acknowledged from the notification"
+    },
     "open": "Change state",
     "dialogTitle": "Change state",
     "chooseTarget": "Choose the target state",
