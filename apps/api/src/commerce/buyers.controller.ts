@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, HttpCode, Param, Post, Put, Query, Req, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, HttpCode, Param, Post, Put, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { validateBody, validateQuery } from '../common/contract';
 import { Roles } from '../identity/principal';
@@ -88,5 +88,20 @@ export class BuyersController {
   @HttpCode(200)
   updateMember(@Param('orgId') id: string, @Param('userId') userId: string, @Body() body: unknown, @Req() req: Request): Promise<BuyerMember> {
     return this.buyers.updateMember(req.principal!, id, userId, validateBody<BuyerMemberUpdate>('/buyer-organizations/{org_id}/members/{user_id}', 'put', body));
+  }
+
+  // إعادة إصدار رمز الدعوة وإلغاؤها للمدعو الذي لم يُكمل القبول (قرار المنسّق 2026-11-15)
+  @Post(':orgId/members/:userId/invitation')
+  @Roles('system_admin', 'buyer_admin')
+  @HttpCode(200)
+  reissueInvitation(@Param('orgId') id: string, @Param('userId') userId: string, @Req() req: Request): Promise<BuyerMember & { invite_token?: string }> {
+    return this.buyers.reissueInvitation(req.principal!, id, userId);
+  }
+
+  @Delete(':orgId/members/:userId/invitation')
+  @Roles('system_admin', 'buyer_admin')
+  @HttpCode(204)
+  async cancelInvitation(@Param('orgId') id: string, @Param('userId') userId: string, @Req() req: Request): Promise<void> {
+    await this.buyers.cancelInvitation(req.principal!, id, userId);
   }
 }
