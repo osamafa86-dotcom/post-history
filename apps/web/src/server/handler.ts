@@ -136,7 +136,7 @@ async function respond(request: NextRequest, path: string, deps?: Deps): Promise
       if (isWrite && uploadPath(path, request.method)) return uploadAction(request, path, api, me, await bodyOf(request, uploadBodyLimit(path)), config!);
       // الرموز الاحتياطية ومفاتيح المرور ورابط إعادة التعيين واعتماد الاستعادة؛ رد المصادِق عند التسجيل أكبر من 8 KiB
       if (isWrite && accountWritePath(path, request.method)) return accountWrite(request, path, api, me, await bodyOf(request, path === "me/passkeys" ? 65536 : 8192));
-      if (accountReadPath(path)) return accountRead(request, path, api);
+      if (accountReadPath(path)) return accountRead(request, path, api, me);
       // نصوص القالب ثنائية اللغة حتى 4000 حرف لكل حقل؛ أكبر من حد إجراءات المراجعة.
       // القائمة المقترحة حتى 50 وسمًا بأربعين نقطة ترميز (حتى 4 بايتات لكلٍّ منها) تتجاوز 8 KiB.
       if (isWrite) return reviewAction(request, path, api, me, await bodyOf(request, path.startsWith("license-templates") ? 65536 : /^materials\/[0-9a-f-]{36}\/listing$/i.test(path) ? 262144 : path === "tag-suggestions" ? 16384 : 8192), config!);

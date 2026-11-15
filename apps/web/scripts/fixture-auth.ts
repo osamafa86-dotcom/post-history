@@ -72,6 +72,16 @@ export function authPublic(path: string, method: string, body: Record<string, un
 /** بجلسة: الرموز الاحتياطية، ومفاتيح المرور، ورابط إعادة التعيين، واعتماد الاستعادة. `replay` ما يعود عند التكرار بالمفتاح نفسه. */
 export function authRead(path: string, user: Me): Reply {
   if (path === "/v1/auth/recovery-codes") return { status: 200, value: { remaining: codes.get(user.user_id)?.remaining ?? 0, generated_at: codes.get(user.user_id)?.generated_at ?? null, internal_note: "never-display-canary" } };
+  const request = /^\/v1\/auth\/recovery\/([^/]+)$/.exec(path);
+  if (request) {
+    // قراءة طلب الاستعادة كالخادم: للمشرف ومدير النظام، وطلب حساب مدير `403`، والمجهول `404`. الرد يحمل ما يجب ألّا يمرّ.
+    if (!has(user, "supervisor", "system_admin")) return { status: 403, value: { code: "forbidden_scope" } };
+    const row = requests.get(request[1]);
+    if (!row) return { status: 404, value: {} };
+    if (row.admin) return { status: 403, value: { code: "admin_quorum_required" } };
+    return { status: 200, value: { id: request[1], state: row.state, created_at: row.created_at, approved_by: row.state === "approved" ? user.user_id : null, expires_at: "2026-10-22T10:00:00Z", email: "never-display-canary@example.test",
+      account: { user_id: "10000000-0000-4000-8000-0000000000b2", work_name: "مراسل الجنوب", roles: ["reporter"], office_id: "30000000-0000-4000-8000-000000000001", office_name: { ar: "مكتب غزة", en: "Gaza office" }, legal_name: "never-display-canary" } } };
+  }
   if (path === "/v1/me/passkeys") return passkeysOff ? { status: 404, value: {} } : { status: 200, value: { items: passkeys.filter(key => key.owner.user_id === user.user_id).map(view) } };
   return null;
 }
