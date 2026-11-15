@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { Me } from "@/lib/types";
 import { hasRole } from "@/lib/review";
 import { uuid } from "@/lib/query";
-import { allowedDownload, licenseDownloaders, licenseNumberPattern, licenseReaders, licenseStatuses, normalizeLicenseNumber, safeLicense, safeVerification } from "@/lib/issued-licenses";
+import { activeLicenseReaders, allowedDownload, licenseDownloaders, licenseNumberPattern, licenseReaders, licenseStatuses, normalizeLicenseNumber, revokedReasons, safeActiveLicenses, safeLicense, safeVerification } from "@/lib/issued-licenses";
 import { clientAddress, requireOk, upstream, type Api } from "./auth";
 import type { WebConfig } from "./config";
 import { WebError } from "./errors";
@@ -18,11 +18,21 @@ export async function licenseRead(request: Request, id: string | undefined, api:
     if (!uuid.test(id) || search.size) throw new WebError(404, "request_failed");
     return json(safeLicense(requireOk(await api.GET("/licenses/{license_id}", { params: { path: { license_id: id } } }))));
   }
-  if ([...search.keys()].some(key => !["status", "organization_id", "cursor", "limit"].includes(key) || search.getAll(key).length > 1)) throw new WebError(400, "request_failed");
-  const status = search.get("status"), org = search.get("organization_id"), limit = search.get("limit") ?? "50", cursor = search.get("cursor");
+  if ([...search.keys()].some(key => !["status", "organization_id", "revoked_reason", "refunded", "cursor", "limit"].includes(key) || search.getAll(key).length > 1)) throw new WebError(400, "request_failed");
+  const status = search.get("status"), org = search.get("organization_id"), limit = search.get("limit") ?? "50", cursor = search.get("cursor"), reason = search.get("revoked_reason"), refunded = search.get("refunded");
   if ((status && !(licenseStatuses as readonly string[]).includes(status)) || (org && !uuid.test(org)) || !/^\d+$/.test(limit) || +limit < 1 || +limit > 100 || (cursor?.length ?? 0) > 2048) throw new WebError(400, "request_failed");
-  const page = requireOk(await api.GET("/licenses", { params: { query: { limit: +limit, ...(status ? { status: status as typeof licenseStatuses[number] } : {}), ...(org ? { organization_id: org } : {}), ...(cursor ? { cursor } : {}) } } }));
+  if ((reason !== null && !(revokedReasons as readonly string[]).includes(reason)) || (refunded !== null && !["true", "false"].includes(refunded))) throw new WebError(400, "request_failed");
+  const page = requireOk(await api.GET("/licenses", { params: { query: { limit: +limit, ...(status ? { status: status as typeof licenseStatuses[number] } : {}), ...(org ? { organization_id: org } : {}), ...(reason ? { revoked_reason: reason as typeof revokedReasons[number] } : {}), ...(refunded !== null ? { refunded: refunded === "true" } : {}), ...(cursor ? { cursor } : {}) } } }));
   return json({ items: page.items.map(safeLicense), next_cursor: page.next_cursor });
+}
+
+/** عدد التراخيص الفاعلة على مادة وعدد مؤسساتها (قبل خروج حقوقها من `sellable`): عددان وحدهما، لأدوار العقد وحدها. */
+export async function materialActiveLicenses(request: Request, id: string, api: Api, me: Me) {
+  if (!uuid.test(id) || new URL(request.url).search) throw new WebError(404, "request_failed");
+  if (!hasRole(me, ...activeLicenseReaders)) throw new WebError(403, "request_failed");
+  const counts = safeActiveLicenses(requireOk(await api.GET("/materials/{id}/active-licenses", { params: { path: { id } } })));
+  if (!counts) throw new WebError(502, "temporarily_unavailable");
+  return json(counts);
 }
 
 /** منحة تنزيل تُحصى في الخادم؛ الرابط يذهب إلى المتصفح وحده، لا يُسجَّل، ولا يخرج عن أصول التخزين في الإعداد. */

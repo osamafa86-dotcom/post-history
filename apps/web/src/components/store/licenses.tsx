@@ -8,7 +8,7 @@ import { formatDate, longDate, messages, plural, type Locale } from "@/lib/i18n"
 import { hasRole } from "@/lib/review";
 import { useMutation } from "@/lib/use-mutation";
 import { fileFormat, formatDuration, formatMoney, localized, orderLabel } from "@/lib/store-format";
-import { deliveryLate, licenseDownloaders, licenseReaders, type IssuedLicense } from "@/lib/issued-licenses";
+import { deliveryLate, licenseDownloaders, licenseReaders, refundReviewers, type IssuedLicense } from "@/lib/issued-licenses";
 import { countryName } from "@/lib/countries";
 import { delivered } from "@/lib/license-policy";
 import { useUser } from "../session-boundary";
@@ -42,12 +42,14 @@ export function LicensesPage({ locale }: { locale: Locale }) {
   const member = hasRole(me, "buyer_member") && !hasRole(me, "buyer_admin"), [ownOrders, setOwnOrders] = useState<Set<string> | null>(null);
   // الطاقم: «التراخيص الصادرة» لكل المؤسسات بعمودها ومرشّحيها (T3-17)
   const staff = allowed && !isBuyer(me), names = useOrganizationNames(staff), [filter, setFilter] = useState<{ organization: string; status: IssuedLicense["status"] | "" }>({ organization: "", status: "" });
+  // للمالية ومدير النظام: ما أُبطل لسبب حقوقي ولم يُطلب استرداده (قرار المنسّق 2026-11-15)، بمصفّيَي العقد `revoked_reason` و`refunded`.
+  const reviewer = staff && hasRole(me, ...refundReviewers), [unrefunded, setUnrefunded] = useState(false);
   useEffect(() => {
     if (!allowed) return;
     const controller = new AbortController();
-    void browserApi().GET("/licenses", { params: { query: { ...(filter.organization ? { organization_id: filter.organization } : {}), ...(filter.status ? { status: filter.status } : {}) } }, signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) { setItems(data.items); setError(false); } }).catch(() => { if (!controller.signal.aborted) setError(true); });
+    void browserApi().GET("/licenses", { params: { query: { ...(filter.organization ? { organization_id: filter.organization } : {}), ...(unrefunded ? { status: "revoked" as const, revoked_reason: "rights_withdrawn" as const, refunded: false, limit: 100 } : filter.status ? { status: filter.status } : {}) } }, signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) { setItems(data.items); setError(false); } }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
-  }, [allowed, attempt, filter]);
+  }, [allowed, attempt, filter, unrefunded]);
   useEffect(() => {
     if (!allowed || !member) return;
     const controller = new AbortController();
@@ -74,10 +76,13 @@ export function LicensesPage({ locale }: { locale: Locale }) {
   if (!allowed) return <NoAccess locale={locale} me={me} title={t.mine} denied={t.denied} />;
   return <>
     <div className="page-heading"><h1>{staff ? t.issued : t.mine}</h1></div>
-    {staff && <StaffFilters locale={locale} names={names} organization={filter.organization} status={filter.status} statuses={licenseStatuses} statusLabel={s => t.statuses[s]} onChange={next => { setItems(null); setFilter(next); }} />}
+    {staff && <StaffFilters locale={locale} names={names} organization={filter.organization} status={unrefunded ? "revoked" : filter.status} statuses={licenseStatuses} statusLabel={s => t.statuses[s]} onChange={next => { setItems(null); setUnrefunded(false); setFilter(next); }} />}
+    {reviewer && <><label className="check" data-testid="unrefunded-toggle"><input type="checkbox" checked={unrefunded} onChange={e => { setItems(null); setUnrefunded(e.target.checked); }} />{t.unrefundedRights}</label>
+      {unrefunded && <p className="muted" data-testid="unrefunded-lead">{t.unrefundedLead}</p>}</>}
     {mutation.status && mutation.status !== 200 ? <><ActionStatus status={mutation.status} locale={locale} />{mutation.status === 409 && <p className="notice error">{t.downloadConflict}</p>}</> : null}
     {error ? <EmptyState icon="offline" role="alert" title={m.error} actions={<button className="secondary" onClick={() => setAttempt(n => n + 1)}>{m.retry}</button>} />
       : !items ? <p className="center-state" role="status">{m.loading}</p>
+      : !items.length && unrefunded ? <EmptyState icon="license" testId="unrefunded-empty" title={t.unrefundedEmpty} />
       : !items.length ? <EmptyState icon="license" title={t.emptyTitle} actions={<Link prefetch={false} className="button store" href={`/${locale}/store`}>{m.store.cartPage.browse}</Link>}><p>{t.emptyBody}</p></EmptyState>
       : <div className="store-table licenses-table"><table><thead><tr>{[t.colMaterial, ...(staff ? [m.staffFilters.organization] : []), t.colOrder, t.colLicence, t.colEnds, t.colAction].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
         <tbody>{items.map(l => {
@@ -89,7 +94,8 @@ export function LicensesPage({ locale }: { locale: Locale }) {
             <td data-label={t.colLicence}>{localized(l.terms.name, locale)}</td>
             <td data-label={t.colEnds}>{view === "ended" ? <span className="state-word warn"><Icon name="alert" size={14} />{t.endedOn.replace("{date}", longDate(l.valid_until, locale))}</span> : l.valid_until ? longDate(l.valid_until, locale) : t.noExpiry}</td>
             <td data-label={t.colAction} className="license-action">{
-              view === "revoked" ? <span className="state-word danger"><Icon name="ban" size={14} />{t.revokedShort}{l.revoked_reason && <small> ({t.reasons[l.revoked_reason]})</small>}</span>
+              view === "revoked" ? <><span className="state-word danger"><Icon name="ban" size={14} />{t.revokedShort}{l.revoked_reason && <small> ({t.reasons[l.revoked_reason]})</small>}</span>
+                {unrefunded && <Link prefetch={false} className="button secondary" data-testid="refund-review" href={`/${locale}/store/orders/${l.order_id}`}>{t.openOrder}</Link>}</>
               : view === "ended" ? <Link prefetch={false} className="button secondary" href={`/${locale}/store/${l.listing_id}`} aria-label={t.renewFor.replace("{title}", title)}>{t.renew}</Link>
               : !downloader ? <Link prefetch={false} href={`/${locale}/store/licenses/${l.id}`}>{t.open}</Link>
               : view === "preparing" ? deliveryLate(l, now) ? <Link prefetch={false} className="state-word warn" data-testid="delivery-late" href={`/${locale}/store/licenses/${l.id}`}><Icon name="alert" size={14} />{t.lateShort}</Link>

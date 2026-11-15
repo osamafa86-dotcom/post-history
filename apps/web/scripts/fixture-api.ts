@@ -211,6 +211,13 @@ const server = createServer(async (req, res) => {
     // تنبيهات بأنواعها (ADR 0121): ما يصل صاحب المادة (ومنه عاجل)، أو ما يصل الطاقم (مادة واردة، عاجلة، معادة، ومادة لا يقرؤها المتصل).
     const at = (minutes: number) => new Date(Date.now() - minutes * 60000).toISOString();
     const row = (n: number, type: string, material: string, extra: Partial<Notification> = {}): Notification => ({ id: `60000000-0000-4000-8000-0000000001${String(n).padStart(2, "0")}`, type, title: "never-display-canary", material_id: material, priority: "normal", state: "sent", created_at: at(n), ...extra } as Notification);
+    // تنبيها المشتري: عنوان الخادم يحمل الرقم ونصًّا؛ الـBFF يمرّر الرقم وحده
+    if (url.searchParams.get("for") === "buyer") {
+      notifications.splice(0, notifications.length,
+        { ...row(1, "license.revoked", ""), material_id: null, priority: "important", title: "أُبطل الترخيص PH-2026-4HJ8NP0WVZ وتوقف تنزيله never-display-canary" } as Notification,
+        { ...row(2, "order.status_changed", ""), material_id: null, title: "تغيّرت حالة الطلب ORD-2026-7K3M9Q2X never-display-canary" } as Notification);
+      return send({ ok: true });
+    }
     notifications.splice(0, notifications.length, ...(url.searchParams.get("for") === "reporter" ? [
       row(1, "material.change_requested", materials[0].id, { priority: "urgent" }), row(2, "material.rejected", materials[1].id), row(3, "material.accepted", materials[2].id),
       row(4, "upload.verified", materials[3].id), row(5, "material.acknowledged", materials[4].id), row(6, "material.published", materials[5].id),
@@ -430,6 +437,8 @@ const server = createServer(async (req, res) => {
         const resubmits = track === "editorial" && has("reporter") && item.reporter_id === user.user_id && item.editorial_state === "needs_changes" && body.to === "reviewing";
         if (track === "editorial" && !resubmits && !has("supervisor", "producer", "editor_in_chief") || track === "rights" && !has("rights_officer") || track === "technical" && !has("reporter")) return send({}, 403);
         const from = item[column]; Object.assign(item, { [column]: body.to }); item.row_version!++;
+        // كالخادم (ADR 0118): خروج الحقوق من «صالحة للترخيص» يُبطل التراخيص الفاعلة بسبب حقوقي
+        if (track === "rights" && from === "sellable" && body.to !== "sellable") for (const license of issued.values()) if (license.status === "active") Object.assign(license, { status: "revoked", revoked_reason: "rights_withdrawn" });
         history.set(item.id, [...(history.get(item.id) ?? []), { id: randomUUID(), track, from, to: String(body.to), reason: String(body.reason), note_timecode_ms: typeof body.note_timecode_ms === "number" ? body.note_timecode_ms : null, actor_id: user.user_id, actor_name: has("reporter") ? null : "Synthetic staff", occurred_at: stamp }]);
         return commit(item, 200);
       }
@@ -720,11 +729,21 @@ const server = createServer(async (req, res) => {
     const found = listings.get(listingRead[1]); if (!found) return send({ code: "not_found" }, 404);
     res.setHeader("ETag", `"${found.row}"`); return send({ ...Object.fromEntries(Object.entries(found).filter(([key]) => key !== "row")), internal_note: "never-display-canary" });
   }
+  // ما يُبطله خروج حقوق المادة من «صالحة للترخيص»: عددان وحدهما، لأدوار العقد
+  const activeLicenses = /^\/v1\/materials\/([^/]+)\/active-licenses$/.exec(url.pathname);
+  if (activeLicenses) {
+    if (!user.roles.some(role => ["system_admin", "editor_in_chief", "rights_officer", "finance"].includes(role.name))) return send({ code: "forbidden_role" }, 403);
+    const material = materials.find(m => m.id === activeLicenses[1]); if (!material) return send({}, 404);
+    const active = material.rights_state === "sellable" ? [...issued.values()].filter(l => l.status === "active") : [];
+    return send({ active_licenses: active.length, organizations: new Set(active.map(l => l.organization_id)).size, internal_note: "never-display-canary" });
+  }
   const licenseRead = /^\/v1\/licenses(?:\/([^/]+))?$/.exec(url.pathname);
   if (licenseRead) {
     if (!user.roles.some(role => ["system_admin", "finance", "rights_officer", "buyer_admin", "buyer_member"].includes(role.name))) return send({}, 403);
     const visible = [...issued.values()].filter(l => !user.organization_id || l.organization_id === user.organization_id).map(l => Object.fromEntries(Object.entries(l).filter(([key]) => key !== "downloads")));
-    if (!licenseRead[1]) return send({ items: visible, next_cursor: null });
+    // مصفّيات العقد: الحالة، وسبب الإبطال، و`refunded` (ما أُبطل بالاسترداد له استرداد، وغيره لا)
+    const status = url.searchParams.get("status"), reason = url.searchParams.get("revoked_reason"), refunded = url.searchParams.get("refunded");
+    if (!licenseRead[1]) return send({ items: visible.filter(l => (!status || l.status === status) && (!reason || l.revoked_reason === reason) && (refunded === null || (l.revoked_reason === "refunded") === (refunded === "true"))), next_cursor: null });
     const found = visible.find(l => l.id === licenseRead[1]); return found ? send(found) : send({}, 404);
   }
   const refundRead = /^\/v1\/orders\/([^/]+)\/refunds$/.exec(url.pathname);
@@ -819,7 +838,11 @@ const server = createServer(async (req, res) => {
     const signature = randomUUID(), expires = Date.now() + 300000; signed.set(signature, { kind: "proxy", expires });
     return send({ url: `${fixtureOrigin}/derived/fixture?signature=${signature}`, expires_at: new Date(expires).toISOString() });
   }
-  if (url.pathname === "/v1/notifications") { const items = url.searchParams.get("unread_only") === "true" ? notifications.filter(n => !n.read_at) : notifications; return send({ items, next_cursor: null, unread_count: notifications.filter(n => !n.read_at).length }); }
+  if (url.pathname === "/v1/notifications") {
+    // المشتري يصله من الخادم إبطال ترخيص وتغيّر حالة طلب وحدهما؛ تنبيهات الطاقم ليست له
+    const mine = user.organization_id ? notifications.filter(n => n.type === "license.revoked" || n.type === "order.status_changed") : notifications;
+    const items = url.searchParams.get("unread_only") === "true" ? mine.filter(n => !n.read_at) : mine; return send({ items, next_cursor: null, unread_count: mine.filter(n => !n.read_at).length });
+  }
   const trail = /^\/v1\/materials\/([^/]+)\/transitions$/.exec(url.pathname);
   if (trail) return send({ items: history.get(trail[1]) ?? [] });
   if (url.pathname === "/v1/forms") {
