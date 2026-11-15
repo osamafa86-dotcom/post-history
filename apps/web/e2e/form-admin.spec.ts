@@ -13,7 +13,7 @@ async function publish(page: Page, locale: "ar" | "en" = "ar", version = 2) {
   const m = locale === "ar" ? ar : en, t = m.formsAdmin;
   await page.getByRole("button", { name: t.preview, exact: true }).click();
   await page.getByRole("button", { name: publishLabel(t, version), exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name: m.confirm, exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: t.confirmPublish.replace("{version}", String(version)), exact: true }).click();
 }
 test.beforeEach(async ({ request }) => { await request.post("http://127.0.0.1:3201/__test/reset"); });
 
@@ -37,7 +37,9 @@ test("publishes a searchable field after preview and preserves the original vers
   await expect(preview.getByLabel("Detail", { exact: false })).toBeVisible();
   await expect(page.getByTestId("core-field").filter({ hasText: t.core.location.label })).toContainText(t.encrypted);
   await page.getByRole("button", { name: publishLabel(t, 2), exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name: ar.confirm, exact: true }).click();
+  // زر التأكيد يقول فعله، لا نص حوار آخر
+  await expect(page.getByRole("dialog").getByRole("button", { name: ar.confirm, exact: true })).toHaveCount(0);
+  await page.getByRole("dialog").getByRole("button", { name: t.confirmPublish.replace("{version}", "2"), exact: true }).click();
   await expect(page.getByRole("combobox", { name: t.version, exact: true })).toHaveValue("2");
   const snapshots = await page.evaluate(async () => ({ current: await (await fetch("/api/bff/forms/current")).json(), old: await (await fetch("/api/bff/forms/1")).json(), list: await (await fetch("/api/bff/forms")).json() }));
   expect(snapshots.current.fields[0].searchable).toBe(true); expect(snapshots.current.fields[0].label.en).toBe("New headline"); expect(JSON.stringify(snapshots)).not.toContain("PREVIEW_ONLY");
@@ -70,7 +72,7 @@ test("a lost publication response reuses the same idempotency key without a seco
   await login(page); const t = ar.formsAdmin;
   await page.getByRole("button", { name: t.clone }).click(); await request.post("http://127.0.0.1:3201/__test/drop-write");
   await publish(page); await expect(page.getByText(ar.review.failed, { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: publishLabel(t, 2), exact: true }).click(); await page.getByRole("dialog").getByRole("button", { name: ar.confirm, exact: true }).dblclick();
+  await page.getByRole("button", { name: publishLabel(t, 2), exact: true }).click(); await page.getByRole("dialog").getByRole("button", { name: t.confirmPublish.replace("{version}", "2"), exact: true }).dblclick();
   await expect(page.getByRole("combobox", { name: t.version, exact: true })).toHaveValue("2");
   const state = await (await request.get("http://127.0.0.1:3201/__test/state")).json();
   const writes = state.writes.filter((w: { path: string }) => w.path === "/v1/forms"); expect(writes).toHaveLength(2); expect(writes[0].key).toBe(writes[1].key);
@@ -87,7 +89,7 @@ test("concurrent publication keeps the stale draft; reload requires confirmation
   await publish(page); await expect(page.getByText(ar.review.changed, { exact: true })).toBeVisible();
   await expect(page.getByTestId("field-editor").first().getByRole("group", { name: t.label, exact: true }).getByLabel(t.arabic)).toHaveValue("مسودة محفوظة");
   await page.getByRole("button", { name: t.discard }).click(); await page.getByRole("dialog").getByRole("button", { name: ar.cancel, exact: true }).click(); await expect(page.getByTestId("field-row")).toHaveCount(13); await expect(page.getByTestId("field-editor")).toHaveCount(1);
-  await page.getByRole("button", { name: t.discard }).click(); await page.getByRole("dialog").getByRole("button", { name: ar.confirm, exact: true }).click(); await expect(page.getByRole("combobox", { name: t.version, exact: true })).toHaveValue("2");
+  await page.getByRole("button", { name: t.discard }).click(); await page.getByRole("dialog").getByRole("button", { name: t.confirmDiscard, exact: true }).click(); await expect(page.getByRole("combobox", { name: t.version, exact: true })).toHaveValue("2");
   await expect(page.locator("main")).not.toContainText("never-display-canary");
 });
 
@@ -99,4 +101,20 @@ test("chief reads history without publishing and a revoked admin cannot publish"
   await request.post("http://127.0.0.1:3201/__test/revoke-role"); await publish(page); await expect(page.getByText(ar.review.forbidden, { exact: true })).toBeVisible();
   const state = await (await request.get("http://127.0.0.1:3201/__test/state")).json(); expect(state.writes.filter((w: { path: string }) => w.path === "/v1/forms")).toHaveLength(0);
   await context.clearCookies(); await login(page, "reporter"); await expect(page.getByText(t.denied, { exact: true })).toBeVisible(); await expect(page.getByTestId("field-editor")).toHaveCount(0);
+});
+
+test("a field whose lower bound is above its upper bound is refused before the preview, by name", async ({ page }) => {
+  await login(page); const t = ar.formsAdmin;
+  await page.getByRole("button", { name: t.clone }).click();
+  const first = page.getByTestId("field-editor").first();
+  await first.getByRole("group", { name: t.label, exact: true }).getByLabel(t.arabic).fill("عنوان الخبر");
+  await first.getByLabel(t.rules.min_length, { exact: true }).fill("10"); await first.getByLabel(t.rules.max_length, { exact: true }).fill("5");
+  await page.getByRole("button", { name: t.preview, exact: true }).click();
+  const problem = page.getByTestId("bounds-crossed"); await expect(problem).toContainText("عنوان الخبر"); await expect(problem).toContainText(t.rules.min_length); await expect(problem).toContainText(t.rules.max_length);
+  await expect(page.getByRole("region", { name: t.preview, exact: true })).toHaveCount(0); await expect(page.getByRole("button", { name: publishLabel(t, 2), exact: true })).toHaveCount(0);
+  // الـBFF يرفضه كذلك إن أُرسل مباشرة
+  const direct = await page.evaluate(async () => { const r = await fetch("/api/bff/forms", { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "post-history-web", "Idempotency-Key": crypto.randomUUID(), "If-Match": '"1"' }, body: JSON.stringify({ version: 2, fields: [{ key: "headline", type: "short_text", label: { ar: "ع", en: "h" }, required: false, validation: { min_length: 10, max_length: 5 } }] }) }); return r.status; });
+  expect(direct).toBe(422);
+  await first.getByLabel(t.rules.max_length, { exact: true }).fill("20"); await page.getByRole("button", { name: t.preview, exact: true }).click();
+  await expect(problem).toHaveCount(0); await expect(page.getByRole("region", { name: t.preview, exact: true })).toBeVisible();
 });
