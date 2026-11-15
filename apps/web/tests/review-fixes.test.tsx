@@ -70,7 +70,7 @@ describe("staff preview uses server-made light copies only", () => {
     expect(staffPreview({ files: [phone, server, poster], thumbnail_file_id: null }).proxy).toBe(server);
     const prepared = staffPreview({ files: [phone, poster], thumbnail_file_id: poster.id });
     expect(prepared.proxy).toBeNull(); expect(prepared.poster).toBe(poster);
-    expect(staffPreview({ files: [phone], thumbnail_file_id: null })).toEqual({ proxy: null, poster: null, thumbnails: [], clips: [] });
+    expect(staffPreview({ files: [phone], thumbnail_file_id: null })).toEqual({ proxy: null, poster: null, thumbnails: [], clips: [], photos: [], unseen: false });
   });
   it("passes the derivative's source through the BFF only as a file id or null", () => {
     const base = material(1), files = [file({ derived_from_id: original }), file({ derived_from_id: null }), file({ derived_from_id: "x<script>" } as never)];

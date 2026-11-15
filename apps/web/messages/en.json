@@ -3146,6 +3146,10 @@
   "clips": {
     "title": "Clips in this material",
     "counter": "Clip {n} of {total}",
-    "open": "Play clip {n} of {total}"
-  }
+    "open": "Play clip {n} of {total}",
+    "photosTitle": "Photos in this material",
+    "photoCounter": "Photo {n} of {total}",
+    "openPhoto": "Show photo {n} of {total}"
+  },
+  "previewNoneForType": "No preview for this file type; the original is kept."
 }

@@ -59,3 +59,38 @@ describe("the player declares the light copy's codecs when the browser plays the
     expect(proxyType).toMatch(/^video\/mp4; codecs="avc1\.[0-9a-f]{6}, mp4a\.40\.2"$/i);
   });
 });
+
+describe("a photo material shows its pictures", () => {
+  const picture = (n: number, mime = "image/jpeg") => file({ id: id(5, n), kind: "original", mime_type: mime });
+  it("puts a photo's server-made thumbnail in the player's place, and switches between photos like clips", () => {
+    const files = [picture(1), picture(2, "image/png"), thumbnail(1), thumbnail(2)];
+    const { clips, photos } = staffPreview({ files, thumbnail_file_id: id(4, 1), material_types: ["photos"] });
+    expect(clips).toEqual([]); expect(photos.map(item => item.id)).toEqual([id(4, 1), id(4, 2)]);
+    const html = renderToStaticMarkup(<MediaPreview locale="ar" material={{ ...material(1), material_types: ["photos"], files }} />);
+    expect(html).toContain('data-testid="photo-stage"'); expect(html).not.toContain("material-player"); expect(html).not.toContain(ar.previewPreparing);
+    expect(html.match(/class="clip-button"/g)).toHaveLength(2);
+    expect(html).toContain(ar.clips.photoCounter.replace("{n}", "1").replace("{total}", "2")); expect(html).toContain(ar.clips.openPhoto.replace("{n}", "2").replace("{total}", "2"));
+    expect(html).toContain(`aria-label="${ar.clips.photosTitle}"`); expect(html).toContain(`<span class="watermark">${ar.watermark}</span>`);
+  });
+  it("a single photo has its picture and no buttons; a video and a photo together are both reachable", () => {
+    const one = renderToStaticMarkup(<MediaPreview locale="en" material={{ ...material(1), material_types: ["photos"], files: [picture(1), thumbnail(1)] }} />);
+    expect(one).toContain('data-testid="photo-stage"'); expect(one).not.toContain("clip-button");
+    const mixed = staffPreview({ files: [original(1), proxy(1), thumbnail(1), picture(2), thumbnail(2)], thumbnail_file_id: null, material_types: ["report"] });
+    expect(mixed.clips).toHaveLength(1); expect(mixed.photos.map(item => item.id)).toEqual([id(4, 2)]);
+  });
+  it("says there is no preview for a HEIC or RAW original instead of promising one, and still waits for a JPEG's thumbnail", () => {
+    const heic = renderToStaticMarkup(<MediaPreview locale="ar" material={{ ...material(1), material_types: ["photos"], files: [picture(1, "image/heic")] }} />);
+    expect(heic).toContain(ar.previewNoneForType); expect(heic).not.toContain(ar.previewPreparing);
+    const raw = renderToStaticMarkup(<MediaPreview locale="en" material={{ ...material(1), material_types: ["photos"], files: [file({ id: id(5, 1), kind: "original", mime_type: null })] }} />);
+    expect(raw).toContain(en.previewNoneForType);
+    const waiting = renderToStaticMarkup(<MediaPreview locale="ar" material={{ ...material(1), material_types: ["photos"], files: [picture(1)] }} />);
+    expect(waiting).toContain(ar.previewPreparing); expect(waiting).not.toContain(ar.previewNoneForType);
+    // أصل فيديو بلا نوع معلن في مادة ليست صورًا ما زال «قيد التحضير»
+    const video = renderToStaticMarkup(<MediaPreview locale="ar" material={{ ...material(1), files: [file({ id: id(5, 1), kind: "original", mime_type: null })] }} />);
+    expect(video).toContain(ar.previewPreparing);
+  });
+  it("the upload page no longer offers AVI, which no worker path reads", async () => {
+    const { cameraExtensions } = await import("../src/lib/upload-policy");
+    expect(cameraExtensions).not.toContain(".avi"); expect(cameraExtensions).toContain(".mxf");
+  });
+});

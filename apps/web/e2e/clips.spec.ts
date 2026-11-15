@@ -49,3 +49,17 @@ for (const locale of ["ar", "en"] as const) test(`${locale}: the player asks the
   expect(asked.length).toBeGreaterThan(0); expect(asked.filter(type => !/codecs="[^"]+"/.test(type))).toEqual([]);
   await expect(page.locator(".shaka-seek-bar")).toHaveAttribute("aria-label", m.playerSeek);
 });
+
+test("a photo material shows its picture in the player's place and moves between photos", async ({ page, request }) => {
+  const { id, photos } = await (await request.post(`${api}/__test/photos`)).json() as { id: string; photos: string[] };
+  await login(page); await page.goto(`/ar/materials/${id}`);
+  const stage = page.getByTestId("photo-stage"), shown = stage.locator("img"), buttons = page.getByTestId("clip-button"), counter = page.getByTestId("clip-counter");
+  await expect(shown).toHaveAttribute("src", new RegExp(`/files/${photos[0]}/content$`)); await expect.poll(() => shown.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(320);
+  await expect(page.locator("video")).toHaveCount(0); await expect(page.getByTestId("preview-preparing")).toHaveCount(0);
+  await expect(counter).toHaveText(count(ar.clips.photoCounter, 1)); await expect(buttons).toHaveCount(2); await expect(buttons.nth(1)).toHaveAccessibleName(count(ar.clips.openPhoto, 2));
+  await buttons.nth(1).click();
+  await expect(shown).toHaveAttribute("src", new RegExp(`/files/${photos[1]}/content$`)); await expect(counter).toHaveText(count(ar.clips.photoCounter, 2)); await expect(buttons.nth(1)).toHaveAttribute("aria-pressed", "true");
+  // العلامة الكاملة على الصورة نفسها
+  const mark = stage.locator(".watermark"); await expect(mark).toHaveText(ar.watermark);
+  expect(await stage.evaluate(element => { const img = element.querySelector("img")!.getBoundingClientRect(), mark = element.querySelector(".watermark")!.getBoundingClientRect(); return mark.top >= img.top && mark.right <= img.right + 1 && mark.left >= img.left; })).toBe(true);
+});

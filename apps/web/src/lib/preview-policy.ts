@@ -43,11 +43,22 @@ export type PreviewClip = { proxy: MaterialFile; thumbnail: MaterialFile | null 
  * `thumbnail`). بلا نسخة من الخادم يظهر الملصق أو حالة «قيد التحضير»، لا نسخة الهاتف. المادة بعدة ملفات فيديو لها مقطع لكل أصل، بترتيب
  * ملفاتها، ومصغّرة المقطع هي المشتقة من الأصل نفسه (`derived_from_id`).
  */
-export function staffPreview(material: Pick<Material, "files" | "thumbnail_file_id">) {
+export function staffPreview(material: Pick<Material, "files" | "thumbnail_file_id"> & { material_types?: readonly string[] }) {
   const verified = material.files.filter(file => file.state === "verified");
-  const thumbnails = verified.filter(file => file.kind === "thumbnail");
+  const thumbnails = verified.filter(file => file.kind === "thumbnail"), originals = verified.filter(file => file.kind === "original");
   const clips: PreviewClip[] = verified.filter(file => file.kind === "proxy" && file.mime_type === "video/mp4" && serverMade(file))
     .map(proxy => ({ proxy, thumbnail: thumbnails.find(file => sourceOf(file) === sourceOf(proxy)) ?? null }));
   const poster = thumbnails.find(file => file.id === material.thumbnail_file_id) ?? thumbnails[0] ?? null;
-  return { proxy: clips[0]?.proxy ?? null, poster, thumbnails, clips };
+  // صورة ثابتة: مصغّرتها التي صنعها الخادم من أصل صورة هي معاينتها (لا نسخة خفيفة لصورة). إن لم يُرَ الأصل فمصغّرة بلا مقطع
+  // في مادة نوعها «صور».
+  const stills = !!material.material_types?.includes("photos"), played = new Set(clips.map(clip => sourceOf(clip.proxy)));
+  const photos = thumbnails.filter(file => {
+    const source = sourceOf(file), original = originals.find(item => item.id === source);
+    return source !== null && !played.has(source) && (original ? isImage(original) : stills);
+  });
+  // أصل لا يُصنع له شيء يُعرض: صورة ليست JPEG ولا PNG (HEIC وRAW)، أو بلا نوع معلن في مادة صور. الأصل محفوظ، ولا معاينة تُنتظر.
+  const unseen = originals.length > 0 && originals.every(file => (isImage(file) && !previewable.includes(file.mime_type ?? "")) || (!file.mime_type && stills));
+  return { proxy: clips[0]?.proxy ?? null, poster, thumbnails, clips, photos, unseen: unseen && !clips.length && !photos.length };
 }
+const previewable = ["image/jpeg", "image/png"];
+const isImage = (file: MaterialFile) => (file.mime_type ?? "").startsWith("image/");

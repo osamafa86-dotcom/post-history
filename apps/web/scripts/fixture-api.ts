@@ -251,6 +251,13 @@ const server = createServer(async (req, res) => {
     item.files.push({ ...made, id: second, kind: "original", mime_type: "video/mp4" }, proxy as typeof item.files[number], thumbnail as typeof item.files[number]);
     return send({ id: item.id, clips: [item.files.find(file => file.kind === "proxy")!.id, proxy.id] });
   }
+  // مادة صور: أصلان صورتان، ولكلٍّ مصغّرته التي صنعها الخادم منه، ولا نسخة خفيفة.
+  if (url.pathname === "/__test/photos" && req.method === "POST") {
+    const item = materials[1], made = { state: "verified", created_at: "2026-10-19T12:05:00Z" } as const, n = (group: number, i: number) => `${group}2000000-0000-4000-8000-00000000000${i}`;
+    item.material_types = ["photos"]; item.thumbnail_file_id = n(4, 1);
+    item.files = [1, 2].flatMap(i => [{ ...made, id: n(5, i), kind: "original", mime_type: "image/jpeg" }, { ...made, id: n(4, i), kind: "thumbnail", mime_type: "image/png", width: 320, height: 180, derived_from_id: n(5, i) }]) as typeof item.files;
+    return send({ id: item.id, photos: [n(4, 1), n(4, 2)] });
+  }
   // مادة لصاحبها لم يصل ملفها (أُلغي رفعها أو لم يبدأ): بلا ملفات، والمسار الفني ينتظر.
   if (url.pathname === "/__test/no-file" && req.method === "POST") { Object.assign(materials[3], { technical_state: "pending", files: [], thumbnail_file_id: null }); return send({ id: materials[3].id }); }
   if (url.pathname === "/__test/request-changes" && req.method === "POST") {

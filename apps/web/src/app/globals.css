@@ -111,6 +111,9 @@ td { font-size: 14px; padding: var(--v2-space-4) var(--v2-space-5); height: 48px
 .thumbnails .video-wrap { flex: 0 0 auto; height: 96px; }
 .thumbnails img { width: auto; height: 100%; object-fit: contain; }
 .thumbnails .watermark { font-size: var(--v2-font-caption-size); right: 4px; top: 4px; padding: 2px 5px; white-space: nowrap; }
+/* الصورة الثابتة مكان المشغّل: بنسبتها هي، وبارتفاع المشغّل نفسه، والعلامة المائية على الصورة لا على ما حولها. */
+.photo-stage { display: grid; justify-items: center; }
+.photo-stage .video-wrap img { display: block; width: auto; height: auto; max-width: 100%; max-height: min(60vh, 640px); object-fit: contain; }
 /* مادة بعدة مقاطع: مصغّرة كل مقطع زرّ يبدّل المشغّل إليه، والمختار بإطار ظاهر على الخلفية الداكنة. */
 .clip-counter { margin: 0; padding: var(--v2-space-3) var(--v2-space-4) 0; font-size: var(--v2-font-caption-size); }
 .thumbnails .clip-button { flex: 0 0 auto; block-size: 96px; min-inline-size: 54px; min-block-size: 0; padding: 0; overflow: hidden; border: var(--v2-border-field) solid transparent; border-radius: var(--v2-radius-sm); background: transparent; color: var(--v2-c-text-on-store); }

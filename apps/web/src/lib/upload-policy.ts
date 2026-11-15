@@ -2,8 +2,9 @@
 // أدوار الرفع من الحاسوب كما في `x-roles` للعقد بعد #193 (createMaterial وcreateUploadSession وcreateWebIngestToken)؛ يطابقها contract-drift.
 export const uploadRoles = ["reporter", "supervisor", "producer", "editor_in_chief"] as const;
 export const sha256Hex = /^[0-9a-f]{64}$/;
-// ملفات الكاميرات الشائعة؛ الخادم وعامل الوسائط هما الحكم النهائي على صلاحية الملف.
-export const cameraExtensions = [".mov", ".mxf", ".mp4", ".m4v", ".mts", ".m2ts", ".avi", ".mkv", ".wav", ".jpg", ".jpeg", ".heic", ".png", ".dng", ".arw", ".cr3", ".nef"] as const;
+// ملفات الكاميرات التي يقرؤها عامل الوسائط: حاويات الفيديو في قائمته البيضاء (ومنها MXF)، وصور JPEG وPNG (تُصنع لها مصغّرة)، وHEIC
+// وRAW (أصول تُحفظ بلا معاينة). لا AVI: لا مسار يقرؤه. الخادم وعامل الوسائط هما الحكم النهائي على صلاحية الملف.
+export const cameraExtensions = [".mov", ".mxf", ".mp4", ".m4v", ".mts", ".m2ts", ".mkv", ".wav", ".jpg", ".jpeg", ".heic", ".png", ".dng", ".arw", ".cr3", ".nef"] as const;
 export const fingerprintBytes = 1048576;
 export const hashSliceBytes = 8 * 1048576;
 // تجديد رمز ingest قبل انتهائه بدقيقة: عمره ≤ 10 دقائق، والجزء الواحد قد يستغرق دقائق على شبكة ضعيفة.
