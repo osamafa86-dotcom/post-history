@@ -108,6 +108,21 @@ describe('forms (/v1/forms)', () => {
     }
   });
 
+  it('refuses a field whose lower bound is above its upper bound, naming the field and the bound', async () => {
+    const v = (await currentFormVersion(h)) + 1;
+    const label = { ar: 'م', en: 'f' };
+    const text = { key: 'headline', type: 'short_text', label, required: true, validation: { min_length: 10, max_length: 5 } };
+    const count = { key: 'crew', type: 'number', label, required: false, validation: { min: 8, max: 2 } };
+    const picks = { key: 'themes', type: 'multi_select', label, required: false, validation: { options: [{ value: 'a', label }, { value: 'b', label }], min_items: 2, max_items: 1 } };
+    const r = await publish(admin, form(v, [text, count, picks])).expect(422);
+    expect(r.body.code).toBe('validation_failed');
+    expect(r.body.details.fields).toEqual(['/fields/2/validation/max_length', '/fields/3/validation/max', '/fields/4/validation/max_items']);
+    expect(await currentFormVersion(h)).toBe(v - 1);
+    // الحدّان المتساويان مقبولان
+    const exact = { key: 'code', type: 'short_text', label, required: false, validation: { min_length: 4, max_length: 4 } };
+    await publish(admin, form(v, [exact])).expect(201);
+  });
+
   it('validates the body against upload-form.json and checks keys and conditions', async () => {
     const v = (await currentFormVersion(h)) + 1;
     expect((await publish(admin, { version: v, fields: [{ key: 'Bad Key' }] }).expect(422)).body.code).toBe('validation_failed');
