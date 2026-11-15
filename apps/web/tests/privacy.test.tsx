@@ -103,7 +103,9 @@ describe("public privacy policy page", () => {
       expect(await render(locale)).toContain('role="note"');
       vi.stubEnv("PRIVACY_CONTACT_EMAIL", ` ${TEST_EMAIL} `);
       const html = await render(locale), m = messages[locale].privacy;
-      expect(html).toContain(`<a href="mailto:${TEST_EMAIL}" dir="ltr">${TEST_EMAIL}</a>`);
+      // الرابط بين تعليقَي الاستثناء من تمويه البريد عند شبكة التوزيع: يصل المتصفح كما كُتب فلا تختلف الصفحة عند الإماهة
+      expect(html).toContain(`<span><!--email_off--><a href="mailto:${TEST_EMAIL}" dir="ltr">${TEST_EMAIL}</a><!--/email_off--></span>`);
+      expect(html.match(/<!--email_off-->/g)).toHaveLength(1);
       expect(html.match(/mailto:/g)).toHaveLength(1);
       expect(html).not.toContain('role="note"');
       expect(html).not.toContain(escape(m.temporary));
@@ -121,6 +123,8 @@ describe("public privacy policy page", () => {
       expect(html).not.toContain("<script>");
       expect(html).toContain('role="note"');
     }
+    // ما يُكتب HTML خامًا لا يحمل حرفًا له معنى في HTML ولا ما يغلق التعليق
+    for (const bad of ["a&b@example.com", "a'b@example.com", 'a"b@example.com', "a>b@example.com", "a-->b@example.com", "a@exa<mple.com", "a@example.com-->"]) expect(privacyContactEmail({ PRIVACY_CONTACT_EMAIL: bad })).toBeNull();
     expect(privacyContactEmail({ PRIVACY_CONTACT_EMAIL: TEST_EMAIL })).toBe(TEST_EMAIL);
     expect(privacyContactEmail({})).toBeNull();
   });
