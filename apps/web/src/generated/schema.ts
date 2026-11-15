@@ -141,6 +141,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/recovery/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف طلب الاستعادة */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * قراءة طلب استعادة حساب لمن يملك اعتماده
+         * @description ما يحتاجه المعتمِد ليعرف أي حساب يعتمد استعادته قبل أن يعتمد: اسم العمل والأدوار والمكتب، وحالة الطلب ووقته وانتهاؤه. **بلا بريد وبلا اسم قانوني** ولا أي وسيلة اتصال: التحقق من الهوية يجري خارج النظام. الصلاحية صلاحية الاعتماد نفسها (`POST /auth/recovery/{id}/approve`): المشرف يقرأ طلب حساب مراسل في نطاقه وحده، ومدير النظام يقرأ ما عداه؛ وما ليس للمتصل `404` كما في الاعتماد، فلا يُعرف وجود الطلب. الطلب المعتمَد أو المنتهي أو المرفوض يُقرأ بحاله. طلب بانتظار الاعتماد فات موعده يُقرأ `expired`. القراءة لا تغيّر شيئًا ولا تعيد رمز إعادة التعيين أبدًا.
+         */
+        get: operations["getRecoveryRequest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/recovery/{id}/approve": {
         parameters: {
             query?: never;
@@ -1754,6 +1777,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/materials/{id}/active-licenses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * عدد التراخيص الفاعلة على المادة ومؤسساتها
+         * @description ما يُبطله خروج حقوق المادة من `sellable` أو وسمها بالحساسية (ADR 0118): عدد التراخيص الفاعلة (`active`) الصادرة على المادة، وعدد المؤسسات التي تحملها. عددان وحدهما، بلا مؤسسة ولا ترخيص بعينه؛ يعرضهما حوار تحويل الحقوق قبل التأكيد (قرار المنسّق 2026-11-15).
+         */
+        get: operations["getMaterialActiveLicenses"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/materials/{id}/listing": {
         parameters: {
             query?: never;
@@ -2793,6 +2838,29 @@ export interface components {
              * @description انتهاء صلاحية الطلب أو الرابط
              */
             expires_at?: string | null;
+        };
+        /** @description طلب استعادة كما يقرؤه من يملك اعتماده، ومعه ما يعرّف الحساب داخليًا. لا بريد ولا اسم قانوني ولا رمز. */
+        RecoveryRequestDetail: components["schemas"]["RecoveryRequest"] & {
+            account: {
+                /**
+                 * Format: uuid
+                 * @description معرّف الحساب؛ يُعرض مختصرًا حين لا اسم عمل له
+                 */
+                user_id: string;
+                /** @description اسم العمل الداخلي (ADR 0035)؛ `null` = لم يُعيَّن */
+                work_name: components["schemas"]["WorkName"] | null;
+                roles: components["schemas"]["RoleName"][];
+                /**
+                 * Format: uuid
+                 * @description مكتب الحساب
+                 */
+                office_id: string | null;
+                /** @description اسم المكتب باللغتين؛ `null` لحساب بلا مكتب */
+                office_name: {
+                    ar: string;
+                    en: string;
+                } | null;
+            };
         };
         RecoveryCodeStatus: {
             /** @description الرموز غير المستعملة من المجموعة الحالية */
@@ -4707,6 +4775,12 @@ export interface components {
              */
             count: number;
         };
+        MaterialActiveLicenses: {
+            /** @description التراخيص الفاعلة الصادرة على المادة */
+            active_licenses: number;
+            /** @description المؤسسات التي تحمل ترخيصًا فاعلًا منها */
+            organizations: number;
+        };
         LicensePage: {
             items: components["schemas"]["License"][];
             next_cursor: string | null;
@@ -5770,6 +5844,32 @@ export interface operations {
             };
             422: components["responses"]["UnprocessableEntity"];
             429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getRecoveryRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف طلب الاستعادة */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الطلب والحساب الذي يخصه */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryRequestDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     approveRecovery: {
@@ -8532,6 +8632,31 @@ export interface operations {
             422: components["responses"]["UnprocessableEntity"];
         };
     };
+    getMaterialActiveLicenses: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description العددان */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterialActiveLicenses"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     getMaterialListing: {
         parameters: {
             query?: never;
@@ -9353,6 +9478,10 @@ export interface operations {
                 status?: components["schemas"]["LicenseStatus"];
                 /** @description للطاقم وحده؛ يُتجاهل للمشتري */
                 organization_id?: string;
+                /** @description التراخيص المُبطلة بهذا السبب وحده */
+                revoked_reason?: "refunded" | "rights_withdrawn" | "manual";
+                /** @description `false`: التراخيص التي لا استرداد لبندها (ما أُبطل لسبب حقوقي ولم يُردّ ثمنه، للمالية، قرار المنسّق 2026-11-15)؛ `true`: ما لبنده استرداد. الاسترداد الفاشل لا يُحسب استردادًا. غيابه = الكل */
+                refunded?: boolean;
                 /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
                 cursor?: components["parameters"]["Cursor"];
                 /** @description حجم الصفحة */

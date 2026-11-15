@@ -2,7 +2,7 @@
 import { NoAccess } from "./empty-state";
 import { useEffect, useRef, useState } from "react";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
-import { fieldTypes, formBodyLimit, formReaders, formWriters, newField, nextForm, publishBody, storeBlocked, urgentLocked, validForm, withToggles, type FormSummary } from "@/lib/form-admin";
+import { boundProblems, fieldTypes, formBodyLimit, formReaders, formWriters, newField, nextForm, publishBody, storeBlocked, urgentLocked, validForm, withToggles, type FormSummary } from "@/lib/form-admin";
 import { formatDate, messages, type Locale } from "@/lib/i18n";
 import { materialTypes } from "@/lib/query";
 import { hasRole } from "@/lib/review";
@@ -53,6 +53,8 @@ export function FormAdmin({ locale }: { locale: Locale }) {
     } catch { if (sequence.current.value === seq) setError(true); }
     finally { if (sequence.current.value === seq) setReading(false); }
   }
+  // الحدّ الأدنى فوق الأقصى: الرسالة تسمّي الحقل والحدّين بدل «راجع قواعد نوع الحقل»
+  const crossed = draft ? boundProblems(draft) : [], fieldName = (key: string) => { const label = draft?.fields.find(field => field.key === key)?.label; return (label && (label[locale] || label.ar || label.en)) || key; };
   function edit(next: Form) { setDraft(next); setPreview(null); setInvalid(false); setOversize(false); mutation.clearStatus(); }
   function review() {
     if (!draft) return;
@@ -98,7 +100,8 @@ export function FormAdmin({ locale }: { locale: Locale }) {
       {reading && <p role="status" className="caption">{m.loading}</p>}
     </>}</div>}
     {draft && <p className="notice">{t.immutable}</p>}
-    {invalid && <p className="notice error" role="alert">{t.invalid}</p>}
+    {invalid && (crossed.length ? <ul className="notice error" role="alert" data-testid="bounds-crossed">{crossed.map(problem => <li key={`${problem.key}:${problem.low}`}>{fill(t.boundsCrossed, { field: fieldName(problem.key), low: t.rules[problem.low], high: t.rules[problem.high] })}</li>)}</ul>
+      : <p className="notice error" role="alert">{t.invalid}</p>)}
     {oversize && <p className="notice error" role="alert">{t.tooLarge}</p>}
     {form && <div className="form-builder">
       <section className="card palette" aria-labelledby="palette-title"><h2 id="palette-title">{t.palette}</h2>
@@ -139,7 +142,7 @@ export function FormAdmin({ locale }: { locale: Locale }) {
         <DynamicForm key={`${JSON.stringify(shown)}:${previewType}:${previewLocale}`} schema={shown} type={previewType} permissions={[]} locale={previewLocale} />
       </div>
     </section>}
-    {confirm && <ConfirmDialog locale={locale} testId="form-confirm" title={confirm === "publish" ? fill(t.publishVersion, { version: draft?.version ?? "" }) : t.discard} confirm={m.confirm} busy={mutation.busy} status={0} onCancel={() => setConfirm(null)}
+    {confirm && <ConfirmDialog locale={locale} testId="form-confirm" title={confirm === "publish" ? fill(t.publishVersion, { version: draft?.version ?? "" }) : t.discard} confirm={confirm === "publish" ? fill(t.confirmPublish, { version: draft?.version ?? "" }) : t.confirmDiscard} busy={mutation.busy} status={0} onCancel={() => setConfirm(null)}
       onConfirm={() => { if (confirm === "publish") void publish(); else { setConfirm(null); setDraft(null); setPreview(null); mutation.clearStatus(); setItems(null); setAttempt(n => n + 1); } }}>
       <p>{confirm === "publish" ? t.publishWarning : t.discardWarning}</p>
     </ConfirmDialog>}

@@ -13,3 +13,10 @@ export const playerControls = {
   overflowMenuButtons: [], keyboardSeekDistance: 5, keyboardLargeSeekDistance: 10,
   alwaysShowVolumeBar: true, customContextMenu: true, contextMenuElements: [], mediaSession: { enabled: false },
 };
+/** نوع النسخة الخفيفة كما ينتجها عامل الوسائط: H.264 High وAAC-LC في MP4. */
+export const proxyType = 'video/mp4; codecs="avc1.640028, mp4a.40.2"';
+/**
+ * النوع الذي يُعلَن للمشغّل: بمرمِّزَيه حين يقول المتصفح إنه يشغّلهما، فلا يُسأل عن `video/mp4` بلا مرمِّز (سؤال يحذّر منه المتصفح عند كل
+ * تحميل). وإلا النوع العام، ويبقى الحكم للمتصفح عند التحميل.
+ */
+export const playerType = (canPlay: (type: string) => string) => canPlay(proxyType) ? proxyType : "video/mp4";

@@ -207,6 +207,20 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/__test/login-throttle" && req.method === "POST") { loginThrottle = Number(url.searchParams.get("seconds") ?? 30); return send({ ok: true }); }
   if (url.pathname === "/__test/auth") return send(authState());
   if (url.pathname === "/__test/passkeys-off" && req.method === "POST") { setPasskeysOff(true); return send({ ok: true }); }
+  if (url.pathname === "/__test/notices" && req.method === "POST") {
+    // تنبيهات بأنواعها (ADR 0121): ما يصل صاحب المادة (ومنه عاجل)، أو ما يصل الطاقم (مادة واردة، عاجلة، معادة، ومادة لا يقرؤها المتصل).
+    const at = (minutes: number) => new Date(Date.now() - minutes * 60000).toISOString();
+    const row = (n: number, type: string, material: string, extra: Partial<Notification> = {}): Notification => ({ id: `60000000-0000-4000-8000-0000000001${String(n).padStart(2, "0")}`, type, title: "never-display-canary", material_id: material, priority: "normal", state: "sent", created_at: at(n), ...extra } as Notification);
+    notifications.splice(0, notifications.length, ...(url.searchParams.get("for") === "reporter" ? [
+      row(1, "material.change_requested", materials[0].id, { priority: "urgent" }), row(2, "material.rejected", materials[1].id), row(3, "material.accepted", materials[2].id),
+      row(4, "upload.verified", materials[3].id), row(5, "material.acknowledged", materials[4].id), row(6, "material.published", materials[5].id),
+    ] : [
+      row(1, "material.urgent_received", materials[0].id, { priority: "urgent", assignment_state: "assigned" }), row(2, "material.created", materials[1].id, { assignment_state: "assigned" }),
+      row(3, "material.resubmitted", materials[2].id), row(4, "material.created", "2fffffff-0000-4000-8000-000000000001", { assignment_state: "assigned" }),
+      ...(url.searchParams.get("for") === "chief" ? [row(5, "notification.escalated", materials[3].id, { priority: "urgent", assignment_state: "assigned", escalation_level: 1 })] : []),
+    ]));
+    return send({ ok: true });
+  }
   if (url.pathname === "/__test/recovery-notice" && req.method === "POST") {
     notifications.unshift({ id: "60000000-0000-4000-8000-000000000099", type: "auth.recovery_requested", title: "never-display-canary", material_id: null, recovery_request_id: recoveryRequestId(Number(url.searchParams.get("n") ?? 1)), priority: "normal", state: "sent", created_at: new Date().toISOString() });
     return send({ ok: true });
@@ -222,13 +236,21 @@ const server = createServer(async (req, res) => {
     res.statusCode = 302; res.setHeader("Location", `http://127.0.0.1:3100/${lang}/store/orders/${order.id}?returned=1`); res.end(); return;
   }
   if (url.pathname === "/__test/state") return send({ writes, applied: applied.size, identitySetting, auditCount: permissionAudit.length });
+  // مادة بملفَّي فيديو: لكل أصل نسخته الخفيفة ومصغّرته المشتقتان منه (`derived_from_id`)، والثاني طولي.
+  if (url.pathname === "/__test/two-clips" && req.method === "POST") {
+    const item = materials[0], first = item.files.find(file => file.kind === "original")!.id, second = "51000000-0000-4000-8000-000000000001", made = { state: "verified", created_at: "2026-10-19T12:05:00Z" } as const;
+    for (const file of item.files) if (file.kind === "thumbnail") Object.assign(file, { derived_from_id: first });
+    const proxy = { ...made, id: "32000000-0000-4000-8000-000000000001", kind: "proxy", mime_type: "video/mp4", width: 480, height: 854, derived_from_id: second }, thumbnail = { ...made, id: "41000000-0000-4000-8000-000000000001", kind: "thumbnail", mime_type: "image/png", derived_from_id: second };
+    item.files.push({ ...made, id: second, kind: "original", mime_type: "video/mp4" }, proxy as typeof item.files[number], thumbnail as typeof item.files[number]);
+    return send({ id: item.id, clips: [item.files.find(file => file.kind === "proxy")!.id, proxy.id] });
+  }
   // مادة لصاحبها لم يصل ملفها (أُلغي رفعها أو لم يبدأ): بلا ملفات، والمسار الفني ينتظر.
   if (url.pathname === "/__test/no-file" && req.method === "POST") { Object.assign(materials[3], { technical_state: "pending", files: [], thumbnail_file_id: null }); return send({ id: materials[3].id }); }
   if (url.pathname === "/__test/request-changes" && req.method === "POST") {
-    // مادة بطلب تعديل وأخرى مرفوضة وثالثة فشل رفعها، وسبب داخلي لا يصل المراسل.
+    // مادة بطلب تعديل وأخرى مرفوضة وثالثة فشل رفعها، وسبب «اطّلعت» داخلي: يراه الطاقم في السجل ولا يصل المراسل.
     const supervisor = "10000000-0000-4000-8000-000000000002", stamp = "2026-10-21T10:00:00Z";
     Object.assign(materials[0], { editorial_state: "needs_changes" }); Object.assign(materials[1], { editorial_state: "rejected" }); Object.assign(materials[2], { technical_state: "failed" });
-    history.set(materials[0].id, [{ id: randomUUID(), track: "editorial", from: "inbox", to: "acknowledged", reason: "never-display-canary", note_timecode_ms: null, actor_id: supervisor, occurred_at: "2026-10-21T09:00:00Z" }, { id: randomUUID(), track: "editorial", from: "reviewing", to: "needs_changes", reason: "أعد اللقطة الافتتاحية بإضاءة أفضل", note_timecode_ms: 42000, actor_id: supervisor, occurred_at: stamp }]);
+    history.set(materials[0].id, [{ id: randomUUID(), track: "editorial", from: "inbox", to: "acknowledged", reason: "اطّلعت عليها والمصدر قيد التحقق", note_timecode_ms: null, actor_id: supervisor, occurred_at: "2026-10-21T09:00:00Z" }, { id: randomUUID(), track: "editorial", from: "reviewing", to: "needs_changes", reason: "أعد اللقطة الافتتاحية بإضاءة أفضل", note_timecode_ms: 42000, actor_id: supervisor, occurred_at: stamp }]);
     history.set(materials[1].id, [{ id: randomUUID(), track: "editorial", from: "reviewing", to: "rejected", reason: "مكررة مع مادة سابقة", note_timecode_ms: null, actor_id: supervisor, occurred_at: stamp }]);
     return send({ ok: true });
   }
@@ -247,6 +269,11 @@ const server = createServer(async (req, res) => {
     Object.assign(materials[10], { editorial_state: "accepted", technical_state: "failed" });                // مقبولة وفشل فني: متوقفة
     Object.assign(materials[11], { editorial_state: "in_production" }); Object.assign(materials[12], { editorial_state: "final_review" });
     Object.assign(materials[13], { editorial_state: "published" });                                          // خارج اللوحة
+    return send({ ok: true });
+  }
+  if (url.pathname === "/__test/final-sensitive" && req.method === "POST") {
+    // مادة موسومة بالحساسية تنتظر النشر، بلا نسخة مُنتَجة: حوار التحويل يسمّي الوسم ويطلب التأكيد.
+    Object.assign(materials[0], { editorial_state: "final_review", sensitivity: { minors: false, injured: true, graphic: false } });
     return send({ ok: true });
   }
   if (url.pathname === "/__test/review-load" && req.method === "POST") {
@@ -399,9 +426,9 @@ const server = createServer(async (req, res) => {
       const stamp = new Date().toISOString();
       if (match[2] === "transitions") {
         const track = body.track as "technical" | "editorial" | "rights", column = `${track}_state` as const;
-        // صاحب المادة يعيدها من «تحتاج تعديلًا» إلى المراجعة (`reporter_owner` في جدول الانتقالات)
+        // كجدول الانتقالات عند الخادم: رئيس التحرير ينشر، وصاحب المادة يعيدها من «تحتاج تعديلًا» إلى المراجعة (`reporter_owner`)
         const resubmits = track === "editorial" && has("reporter") && item.reporter_id === user.user_id && item.editorial_state === "needs_changes" && body.to === "reviewing";
-        if (track === "editorial" && !resubmits && !has("supervisor", "producer") || track === "rights" && !has("rights_officer") || track === "technical" && !has("reporter")) return send({}, 403);
+        if (track === "editorial" && !resubmits && !has("supervisor", "producer", "editor_in_chief") || track === "rights" && !has("rights_officer") || track === "technical" && !has("reporter")) return send({}, 403);
         const from = item[column]; Object.assign(item, { [column]: body.to }); item.row_version!++;
         history.set(item.id, [...(history.get(item.id) ?? []), { id: randomUUID(), track, from, to: String(body.to), reason: String(body.reason), note_timecode_ms: typeof body.note_timecode_ms === "number" ? body.note_timecode_ms : null, actor_id: user.user_id, actor_name: has("reporter") ? null : "Synthetic staff", occurred_at: stamp }]);
         return commit(item, 200);
