@@ -4,7 +4,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { form, material, me, tokens } from "../tests/fixtures";
 import assets from "../tests/media-fixture.json";
 import { assignmentRead, assignmentWrite, resetAssignments, seedAssignments } from "./fixture-assignments";
-import { adminRead, adminWrite, bumpAdmin, resetAdmin } from "./fixture-admin";
+import { createdAccounts, adminRead, adminWrite, bumpAdmin, resetAdmin } from "./fixture-admin";
 import { authPublic, authRead, authState, authWrite, consumeResetToken, recoveryRequestId, resetAuth, resetTokenKnown, resetTokenPrefix, setPasskeysOff } from "./fixture-auth";
 import type { Form, Me, Material, Notification, TransitionRecord, PermissionHistoryEntry, ReporterIdentitySetting, ReporterIdentitySettingUpdate, Permission } from "../src/lib/types";
 const materials: Material[] = [], notifications: Notification[] = [], history = new Map<string, TransitionRecord[]>();
@@ -242,7 +242,7 @@ const server = createServer(async (req, res) => {
     setTimeout(() => { if (order.status === "pending_payment") Object.assign(order, { status: "paid", paid_at: new Date().toISOString(), updated_at: new Date().toISOString(), invoice_number: `INV-${new Date().getUTCFullYear()}-${String(++invoiceCounter).padStart(6, "0")}` }); }, 1500);
     res.statusCode = 302; res.setHeader("Location", `http://127.0.0.1:3100/${lang}/store/orders/${order.id}?returned=1`); res.end(); return;
   }
-  if (url.pathname === "/__test/state") return send({ writes, applied: applied.size, identitySetting, auditCount: permissionAudit.length });
+  if (url.pathname === "/__test/state") return send({ writes, applied: applied.size, identitySetting, auditCount: permissionAudit.length, created: createdAccounts() });
   // مادة بملفَّي فيديو: لكل أصل نسخته الخفيفة ومصغّرته المشتقتان منه (`derived_from_id`)، والثاني طولي.
   if (url.pathname === "/__test/two-clips" && req.method === "POST") {
     const item = materials[0], first = item.files.find(file => file.kind === "original")!.id, second = "51000000-0000-4000-8000-000000000001", made = { state: "verified", created_at: "2026-10-19T12:05:00Z" } as const;

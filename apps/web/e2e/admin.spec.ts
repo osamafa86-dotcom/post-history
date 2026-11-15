@@ -208,3 +208,42 @@ test("the admin pages fit a 375 px phone without sideways scroll, with rows as c
   await page.screenshot({ path: ".artifacts/m5-money-phone.png", fullPage: true });
   await page.goto("/ar/admin"); await expect(page.getByTestId("staff-row").first()).toBeVisible(); await page.screenshot({ path: ".artifacts/a1-users-phone.png", fullPage: true });
 });
+
+test("the administrator adds an office and creates accounts from the page, never a system administrator", async ({ page, request }) => {
+  const c = ar.admin.create;
+  await login(page, "admin"); await page.goto("/ar/admin");
+  const form = page.getByTestId("create-account"), offices = page.getByTestId("offices-card");
+  await expect(offices.getByTestId("office-list").locator("li")).toHaveCount(2); await expect(page.locator("body")).not.toContainText("never-display-canary");
+  // لا دور مدير نظام في القائمة، والنص يقول طريقه
+  await expect(form.locator("select[name=new-account-role] option")).toHaveCount(6); await expect(form.locator('select[name=new-account-role] option[value="system_admin"]')).toHaveCount(0);
+  await expect(form).toContainText(c.noAdmin);
+  // مكتب جديد، والاسم المستعمل يُرفض بسببه
+  await offices.locator("input[name=office-name-ar]").fill("مكتب الشمال"); await offices.locator("input[name=office-name-en]").fill("North office"); await offices.locator("input[name=office-governorate]").fill("north_gaza");
+  await offices.getByRole("button", { name: c.addOffice, exact: true }).click(); await expect(offices.getByTestId("office-note")).toHaveText(c.officeDone); await expect(offices.getByTestId("office-list").locator("li")).toHaveCount(3);
+  await offices.locator("input[name=office-name-ar]").fill("مكتب الشمال"); await offices.locator("input[name=office-name-en]").fill("Another"); await offices.locator("input[name=office-governorate]").fill("north_gaza");
+  await offices.getByRole("button", { name: c.addOffice, exact: true }).click(); await expect(offices.getByTestId("office-note")).toHaveText(c.officeExists);
+  // مراسل بلا مكتب يُرفض قبل الإرسال؛ ثم مكتبه من القائمة
+  await form.locator("input[name=new-account-email]").fill("new.reporter@example.test"); await form.locator("select[name=new-account-role]").selectOption("reporter");
+  await expect(form.locator("input[name=new-account-work-name]")).toHaveCount(0);
+  await form.getByTestId("create-account-submit").click(); await expect(form.getByTestId("create-account-error")).toHaveText(c.invalid);
+  await form.locator("select[name=new-account-office]").selectOption({ label: "مكتب الشمال" }); await form.getByTestId("create-account-submit").click();
+  // الحساب الجديد يُفتح ليصدر له رابط إعادة التعيين، بلا بريد ولا رمز في الصفحة
+  await expect(page.getByTestId("account-created")).toHaveText(c.done); await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("new.reporter@example.test"); await expect(page.locator("body")).not.toContainText("never-display-canary");
+  await page.getByRole("button", { name: ar.admin.back }).click();
+  // مشرف بنطاق مكتب من القائمة، والبريد المستعمل يُرفض بسببه
+  const again = page.getByTestId("create-account");
+  await again.locator("input[name=new-account-email]").fill("new.supervisor@example.test"); await again.locator("select[name=new-account-role]").selectOption("supervisor");
+  await again.locator("input[name=new-account-work-name]").fill("مشرف الشمال"); await again.locator("select[name=new-account-scope]").selectOption({ label: c.officeOption.replace("{name}", "مكتب الشمال") });
+  await again.getByTestId("create-account-submit").click(); await expect(page.getByTestId("account-created")).toHaveText(c.done); await page.getByRole("button", { name: ar.admin.back }).click();
+  const dup = page.getByTestId("create-account"); await dup.locator("input[name=new-account-email]").fill("new.supervisor@example.test"); await dup.getByTestId("create-account-submit").click();
+  await expect(dup.getByTestId("create-account-error")).toHaveText(c.emailTaken);
+  const sent = (await (await request.get("http://127.0.0.1:3201/__test/state")).json()).created;
+  expect(sent).toEqual([{ email: "new.reporter@example.test", role: "reporter", scope_kind: "all", scope_id: "", office_id: "30000000-0000-4000-8000-000000000003" },
+    { email: "new.supervisor@example.test", role: "supervisor", work_name: "مشرف الشمال", scope_kind: "office", scope_id: "30000000-0000-4000-8000-000000000003" }]);
+  // الـBFF يرفض دور مدير النظام ولو أُرسل مباشرة، ومن ليس مدير نظام لا يصل
+  const direct = (role: string) => page.evaluate(async value => (await fetch("/api/bff/users", { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "post-history-web", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ email: "x@example.test", role: value }) })).status, role);
+  expect(await direct("system_admin")).toBe(422);
+  await page.context().clearCookies(); await login(page, "chief"); await page.goto("/ar/admin"); await expect(page.getByTestId("create-account")).toHaveCount(0);
+  expect(await direct("producer")).toBe(403); expect((await page.request.get("/api/bff/offices")).status()).toBe(403);
+});

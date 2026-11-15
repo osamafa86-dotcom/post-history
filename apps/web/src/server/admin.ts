@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { Me } from "@/lib/types";
 import { hasRole } from "@/lib/review";
-import { roleEditors, rolesInput, safeStaffPage, safeStaffRoles, staffQuery, staffReaders } from "@/lib/staff-policy";
+import { officeInput, roleEditors, rolesInput, safeOffice, safeStaffPage, safeStaffRoles, safeStaffUser, staffAccountInput, staffCreators, staffQuery, staffReaders } from "@/lib/staff-policy";
 import { uuid } from "@/lib/query";
 import { rewriteInput, safeRewrite, safeSuggestions, safeTagUsagePage, suggestionReaders, suggestionsInput, tagAdmins, tagUsageQuery } from "@/lib/tag-policy";
 import { platformAdmins, platformInput, safePlatformSettings } from "@/lib/platform-policy";
@@ -16,8 +16,9 @@ const json = (value: unknown, status = 200, version?: number) => {
   if (version !== undefined) response.headers.set("ETag", `"${version}"`);
   return response;
 };
-const readPaths = ["users", "tag-suggestions", "tags", "platform-settings", "contributor-earnings", "buyer-purchase-totals"];
-const writePaths: Record<string, string> = { "tag-suggestions": "PUT", "tag-rewrites": "POST", "platform-settings": "PUT" };
+const readPaths = ["users", "offices", "tag-suggestions", "tags", "platform-settings", "contributor-earnings", "buyer-purchase-totals"];
+// إدارة الطاقم (ADR 0122): إنشاء مكتب وإنشاء حساب، لمدير النظام وحده
+const writePaths: Record<string, string> = { "tag-suggestions": "PUT", "tag-rewrites": "POST", "platform-settings": "PUT", "offices": "POST", "users": "POST" };
 // أدوار حساب الطاقم بمعرّفه (ADR 0104، 0105): قراءة واستبدال
 const rolesPath = (path: string) => { const match = /^users\/([^/]+)\/roles$/.exec(path); return match && uuid.test(match[1]) ? match[1] : null; };
 export const adminReadPath = (path: string) => readPaths.includes(path) || rolesPath(path) !== null;
@@ -38,6 +39,11 @@ export async function adminRead(request: Request, path: string, api: Api, me: Me
     role(me, ...roleEditors); if (search.size) throw new WebError(400, "request_failed");
     const data = requireOk(await api.GET("/users/{id}/roles", { params: { path: { id: rolesOf } } }));
     return json(checked(() => safeStaffRoles(data)));
+  }
+  if (path === "offices") {
+    role(me, ...staffCreators); if (search.size) throw new WebError(400, "request_failed");
+    const data = requireOk(await api.GET("/offices"));
+    return json(checked(() => ({ items: data.items.map(safeOffice).filter(office => office !== null) })));
   }
   if (path === "users") {
     role(me, ...staffReaders); const query = parsed(() => staffQuery(search));
@@ -86,6 +92,23 @@ export async function adminWrite(path: string, api: Api, me: Me, body: Record<st
     if (rolesOf === me.user_id) throw new WebError(403, "request_failed");
     const data = requireOk(await api.PUT("/users/{id}/roles", { params: { path: { id: rolesOf }, header }, body: input }));
     return json(checked(() => safeStaffRoles(data)));
+  }
+  if (path === "offices" || path === "users") {
+    // الرمزان `office_exists` و`email_taken` يمرّان ليقول النموذج سببه؛ وما عداهما كبقية الكتابات. لا بريد ولا رمز في الرد.
+    role(me, ...staffCreators);
+    const conflict = (result: { response: Response; error?: { code?: string } }, code: string) => { if (result.response.status === 409) throw new WebError(409, result.error?.code === code ? code : "request_failed"); };
+    if (path === "offices") {
+      const input = officeInput(body); if (!input) throw new WebError(422, "request_failed");
+      const result = await api.POST("/offices", { params: { header }, body: input }); conflict(result, "office_exists");
+      const data = requireOk(result), office = checked(() => safeOffice(data));
+      if (!office) throw new WebError(502, "temporarily_unavailable");
+      return json(office, 201);
+    }
+    const input = staffAccountInput(body); if (!input) throw new WebError(422, "request_failed");
+    const result = await api.POST("/users", { params: { header }, body: input }); conflict(result, "email_taken");
+    const data = requireOk(result), user = checked(() => safeStaffUser(data));
+    if (!user) throw new WebError(502, "temporarily_unavailable");
+    return json(user, 201);
   }
   if (path === "tag-suggestions") {
     role(me, ...tagAdmins); const input = suggestionsInput(body); if (!input) throw new WebError(422, "request_failed");

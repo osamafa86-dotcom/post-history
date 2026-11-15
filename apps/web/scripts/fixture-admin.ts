@@ -10,6 +10,9 @@ import type { PlatformSettings } from "../src/lib/platform-policy";
 type Reply = { status: number; value: unknown; etag?: string } | null;
 type Staff = StaffUser & { email: string; created_at: string };
 const staff: Staff[] = [], usage = new Map<string, { count: number; last: string | null }>();
+const offices: { id: string; name_ar: string; name_en: string; governorate: string }[] = [], created: Record<string, unknown>[] = [];
+/** ما أُرسل لإنشاء الحسابات، لاختبارات المتصفح. */
+export const createdAccounts = () => created;
 // نطاقات المشرف (A1، ADR 0104): فارغ = كل المكاتب، والمحافظة باسم محافظة مكتب موجود.
 type Scope = { kind: "office" | "governorate"; id: string };
 const scopes = new Map<string, Scope[]>(), officeGovernorates = ["محافظة تجريبية ١", "محافظة تجريبية ٢", "محافظة تجريبية ٣"];
@@ -25,6 +28,7 @@ const page = <T>(items: T[], url: URL, fallback = 50) => {
 };
 
 export function resetAdmin() {
+  offices.splice(0, offices.length, { id: "30000000-0000-4000-8000-000000000001", name_ar: "مكتب غزة", name_en: "Gaza office", governorate: "gaza" }, { id: "30000000-0000-4000-8000-000000000002", name_ar: "مكتب خان يونس", name_en: "Khan Younis office", governorate: "khan_younis" }); created.splice(0, created.length);
   const row = (n: number, work_name: string | null, roles: StaffUser["roles"], governorate: string | null, status: StaffUser["status"], last: number | null): Staff =>
     ({ id: id(n), work_name, roles, governorate, status, last_active_at: last === null ? null : ago(last), email: `staff${n}@example.test`, created_at: ago(n * 86400000) });
   staff.splice(0, staff.length,
@@ -72,6 +76,10 @@ export function adminRead(url: URL, user: Me): Reply {
     if (!has(user, "system_admin")) return { status: 403, value: { code: "forbidden_role" } };
     const row = staff.find(s => s.id === rolesPath[1]); if (!row) return { status: 404, value: {} };
     return { status: 200, value: { user_id: row.id, roles: rolesOf(row), internal_note: "never-display-canary" } };
+  }
+  if (path === "/v1/offices") {
+    if (!has(user, "system_admin")) return { status: 403, value: { code: "forbidden_role" } };
+    return { status: 200, value: { items: offices.map(office => ({ ...office, address: "never-display-canary" })) } };
   }
   if (path === "/v1/users") {
     if (!has(user, "system_admin")) return { status: 403, value: { code: "forbidden_role" } };
@@ -123,6 +131,21 @@ export function adminRead(url: URL, user: Me): Reply {
 
 const valid = (tag: unknown, max = 40) => typeof tag === "string" && Array.from(tag).length >= 1 && Array.from(tag).length <= max && tag.trim() === tag;
 export function adminWrite(path: string, method: string, user: Me, body: Record<string, unknown>, ifMatch: string | undefined): Reply {
+  if (path === "/v1/offices" && method === "POST") {
+    if (!has(user, "system_admin")) return { status: 403, value: { code: "forbidden_role" } };
+    if (offices.some(office => office.name_ar === body.name_ar || office.name_en === body.name_en)) return { status: 409, value: { code: "office_exists" } };
+    const office = { id: `30000000-0000-4000-8000-${String(offices.length + 1).padStart(12, "0")}`, name_ar: String(body.name_ar), name_en: String(body.name_en), governorate: String(body.governorate) };
+    offices.push(office); return { status: 201, value: office };
+  }
+  if (path === "/v1/users" && method === "POST") {
+    // كالخادم: مدير النظام وحده، ولا دور مدير نظام، والبريد المستعمل 409؛ الرد يحمل ما يجب ألّا يمرّ
+    if (!has(user, "system_admin")) return { status: 403, value: { code: "forbidden_role" } };
+    if (body.role === "system_admin" || (body.role === "reporter" && !offices.some(office => office.id === body.office_id))) return { status: 422, value: { code: "validation_failed" } };
+    if (staff.some(row => row.email === String(body.email).toLowerCase())) return { status: 409, value: { code: "email_taken" } };
+    const row: Staff = { id: id(900 + staff.length), work_name: (body.work_name as string | null) ?? null, roles: [body.role as StaffUser["roles"][number]], governorate: offices.find(office => office.id === body.office_id)?.governorate ?? null, status: "active", last_active_at: null, email: String(body.email).toLowerCase(), created_at: new Date().toISOString() };
+    staff.unshift(row); created.push({ ...body });
+    return { status: 201, value: { ...row, reset_token: "never-display-canary" } };
+  }
   if (path === "/v1/tag-suggestions" && method === "PUT") {
     if (!has(user, "system_admin")) return { status: 403, value: {} };
     if (ifMatch !== `"${suggestions.version}"`) return { status: 412, value: { message: "never-display-canary" } };

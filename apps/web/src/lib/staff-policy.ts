@@ -119,3 +119,40 @@ export function sameRoles(a: readonly StaffRole[], b: readonly StaffRole[]): boo
   const key = (roles: readonly StaffRole[]) => roles.map(r => `${r.name}[${r.scopes.map(s => `${s.kind}:${s.id}`).sort().join(",")}]`).sort().join("|");
   return key(a) === key(b);
 }
+
+// إدارة الطاقم من الواجهة (ADR 0122)
+export type Office = components["schemas"]["Office"];
+export type OfficeInput = components["schemas"]["OfficeInput"];
+export type StaffAccountInput = components["schemas"]["StaffAccountInput"];
+/** الأدوار التي ينشئها مدير النظام من الصفحة: الطاقم والمراسل. لا مدير نظام (إجراء الشخصين من سطر الأوامر) ولا مشترٍ (دعوة مؤسسته). */
+export const creatableRoles = ["editor_in_chief", "supervisor", "producer", "finance", "rights_officer", "reporter"] as const satisfies readonly StaffAccountInput["role"][];
+export const staffCreators = ["system_admin"] as const satisfies readonly Role[];
+const shown = (value: unknown, max: number): value is string => plainText(value, max) && value.trim() === value;
+const emailShape = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
+
+/** المكتب بقائمة بيضاء؛ الصف المخالف يسقط. */
+export function safeOffice(office: Office): Office | null {
+  if (!office || !uuid.test(office.id) || !shown(office.name_ar, 120) || !shown(office.name_en, 120) || !shown(office.governorate, 64)) return null;
+  return { id: office.id, name_ar: office.name_ar, name_en: office.name_en, governorate: office.governorate };
+}
+/** مكتب جديد كما يأخذه العقد، أو null. */
+export function officeInput(body: Record<string, unknown>): OfficeInput | null {
+  if (Object.keys(body).sort().join() !== "governorate,name_ar,name_en" || !shown(body.name_ar, 120) || !shown(body.name_en, 120) || !shown(body.governorate, 64)) return null;
+  return { name_ar: body.name_ar, name_en: body.name_en, governorate: body.governorate };
+}
+/**
+ * حساب جديد كما يأخذه العقد، أو null: دور واحد من `creatableRoles`؛ النطاق للمشرف وحده (مكتب بمعرّفه أو محافظة برمزها)؛ مكتب إلزامي للمراسل؛
+ * واسم العمل للطاقم وحده. الخادم هو الحكم النهائي؛ هذا يمنع إرسال ما يُرفض حتمًا.
+ */
+export function staffAccountInput(body: Record<string, unknown>): StaffAccountInput | null {
+  if (Object.keys(body).some(key => !["email", "role", "work_name", "scope_kind", "scope_id", "office_id"].includes(key))) return null;
+  const email = typeof body.email === "string" ? body.email.trim() : "", role = body.role as StaffAccountInput["role"];
+  if (!emailShape.test(email) || email.length > 254 || !(creatableRoles as readonly unknown[]).includes(role)) return null;
+  const name = body.work_name ?? null, kind = body.scope_kind ?? "all", scope = body.scope_id ?? "", office = body.office_id ?? null;
+  if (name !== null && (workName(name) === null || role === "reporter")) return null;
+  if (!["all", "office", "governorate"].includes(kind as string) || typeof scope !== "string" || (kind !== "all" && role !== "supervisor") || (kind === "all") !== (scope === "")) return null;
+  if ((kind === "office" && !uuid.test(scope)) || (kind === "governorate" && !shown(scope, roleLimits.governorate))) return null;
+  if (office !== null && (typeof office !== "string" || !uuid.test(office))) return null;
+  if (role === "reporter" && office === null) return null;
+  return { email, role, ...(name !== null ? { work_name: name as string } : {}), scope_kind: kind as StaffAccountInput["scope_kind"], scope_id: scope, ...(office !== null ? { office_id: office as string } : {}) };
+}
