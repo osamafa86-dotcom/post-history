@@ -8,7 +8,7 @@ import { uuid } from "@/lib/query";
 // تُنسخ في sessionStorage لهذا التبويب وحده باسم صاحبها، كي لا يفرغها تبديل اللغة (تحميل كامل للصفحة)؛ تُمحى مع الحالة الخاصة عند الخروج
 // أو الإبطال وفي صفحة الدخول، وتُهمَل إن كانت لحساب آخر. لا بيانات اعتماد فيها: الإدراج والترخيص والسعر المعروض وحدها.
 export type CartItem = { listing_id: string; license_template_id: string; title: Localized; license: Localized; license_type?: LicenseType; price: Price };
-type Cart = { items: CartItem[]; add: (item: CartItem) => void; remove: (listingId: string) => void; clear: () => void };
+type Cart = { items: CartItem[]; add: (item: CartItem) => void; remove: (listingId: string) => void; clear: () => void; sync: (current: CartItem[]) => void };
 const CartContext = createContext<Cart | null>(null);
 export function useCart() { const cart = useContext(CartContext); if (!cart) throw new Error("Cart required"); return cart; }
 /** عدد البنود لشريط المتجر؛ صفر خارج المزوّد (صفحات الدخول والتحقق العامة). */
@@ -50,5 +50,10 @@ export function CartProvider({ owner, children }: { owner: string; children: Rea
   const update = (next: (current: CartItem[]) => CartItem[]) => setItems(next);
   // بند واحد لكل إدراج: اختيار ترخيص آخر للمادة نفسها يستبدل السابق.
   const add = (item: CartItem) => update(current => [...current.filter(i => i.listing_id !== item.listing_id), item].slice(-cartMax));
-  return <CartContext.Provider value={{ items, add, remove: id => update(current => current.filter(i => i.listing_id !== id)), clear: () => update(() => []) }}>{children}</CartContext.Provider>;
+  // بنود السلة كما هي في الكتالوج الآن (السعر والعنوان واسم الترخيص): تُحدَّث في مكانها، وما أُزيل في الأثناء لا يعود. بلا تغيير لا تتبدّل الحالة.
+  const sync = (fresh: CartItem[]) => update(current => {
+    const next = current.map(item => fresh.find(f => f.listing_id === item.listing_id && f.license_template_id === item.license_template_id) ?? item);
+    return next.some((item, index) => JSON.stringify(item) !== JSON.stringify(current[index])) ? next : current;
+  });
+  return <CartContext.Provider value={{ items, add, sync, remove: id => update(current => current.filter(i => i.listing_id !== id)), clear: () => update(() => []) }}>{children}</CartContext.Provider>;
 }

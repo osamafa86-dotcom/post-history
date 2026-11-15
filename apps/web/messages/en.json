@@ -669,7 +669,7 @@
     "cartEmpty": "Your cart is empty.",
     "remove": "Remove",
     "total": "Total",
-    "currencies": "Currencies are not combined; each total is paid separately.",
+    "currencies": "The cart holds two currencies, and an order is in one. Remove the items of one currency, and pay for them in an order after this one.",
     "eyebrow": "Store (sandbox)",
     "title": "Catalog",
     "lead": "Every item here came from a known reporter, has a receipt and a fingerprint, and was not altered after it arrived. The license is chosen at purchase.",
@@ -753,9 +753,15 @@
         "editorial": "Editorial"
       },
       "startsAt": "Starts at",
-      "addAnother": "Add another license"
+      "replaceInCart": "Replace the license in the cart",
+      "replaced": "The license in the cart was replaced.",
+      "inCart": "This license is in the cart",
+      "otherCurrency": "Your cart holds items in {have}, and an order is in one currency. Pay for them or remove them from the cart, then add this license priced in {want}."
     },
-    "exclusiveUntil": "Exclusivity reserved until {date}",
+    "heldUntil": "This item is under an exclusive license until {date}, so no license is sold on it before then.",
+    "heldByYou": "Your organization holds the exclusive license on this item until {date}, so no other license is sold on it before then.",
+    "offerHeld": "Not available until {date}",
+    "ownedLicense": "You hold an active license of this kind: {number}",
     "termDaysLabel": "License term (days)",
     "exclusivityHoursLabel": "Exclusivity duration (hours)",
     "heading": "Verified footage from the field",
@@ -790,7 +796,8 @@
       "previewBadge": "Preview · watermark",
       "shot": "Shot {date}",
       "cta": "Licenses and prices",
-      "ctaFor": "Licenses and prices: {title}"
+      "ctaFor": "Licenses and prices: {title}",
+      "heldUntil": "Exclusive until {date}"
     },
     "item": {
       "breadcrumb": "Breadcrumb",
@@ -824,7 +831,16 @@
       "emptyBody": "Pick footage and a license from the catalog to see it here. The cart lives in this tab only and is cleared when you sign out.",
       "browse": "Browse footage",
       "checkoutFailed": "The order was created but the payment page didn't open. Continue from the order page.",
-      "openOrder": "Open the order"
+      "openOrder": "Open the order",
+      "checking": "Checking the current prices of the items in the cart",
+      "changed": "Something in the cart changed since you added its items. Review the new total, then proceed to payment.",
+      "priceChanged": "The price changed from {from} to {to}.",
+      "gone": "This item is no longer offered with this license. Remove it to continue.",
+      "held": "This item is under an exclusive license until {date}. Remove it to continue.",
+      "exclusiveTaken": "The exclusive license on this item is no longer available. Remove it to continue.",
+      "blocked": "An item in the cart cannot be bought now. Remove it to continue.",
+      "pendingOrder": "You have an order awaiting payment: {order}",
+      "resumePayment": "Complete the payment"
     },
     "invoice": {
       "title": "Invoice",
@@ -1701,7 +1717,7 @@
       "sandbox": "Taking you to the sandbox provider's page…",
       "stripe": "Taking you to Stripe in test mode; use a Stripe test card only…"
     },
-    "stillWaiting": "We are still waiting for the bank's confirmation; we will email you once it arrives.",
+    "stillWaiting": "The gateway has not confirmed the payment yet. If you completed it, reload this page shortly; if you did not, pay from here or cancel the order.",
     "orderNumber": "Order number",
     "holdEnds": "Exclusivity hold ends in {time}",
     "payWithin": "Payment window ends in {time}",
@@ -1719,7 +1735,9 @@
     "colOrder": "Order",
     "emptyTitle": "No orders yet",
     "emptyBody": "An order is created from the cart with “Proceed to payment” and shows here with its status.",
-    "paidTitle": "Payment received and licenses issued"
+    "paidTitle": "Payment received and licenses issued",
+    "paymentFailed": "The payment did not go through, and nothing was charged. The order still awaits payment: try again or cancel it.",
+    "orderAgain": "Order again"
   },
   "refunds": {
     "title": "Refunds",
