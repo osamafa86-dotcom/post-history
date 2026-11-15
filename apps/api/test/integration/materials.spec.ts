@@ -437,6 +437,20 @@ describe('materials (/v1/materials)', () => {
       expect(log.body.items.at(-1)).toMatchObject({ to: 'in_production' });
     });
 
+    it('publishing releases the reservation: a published material is held by nobody', async () => {
+      const m = await create(reporterA);
+      await setEditorial(m.id, 'accepted');
+      await as(producer).write('post', `/v1/materials/${m.id}/reservation`).expect(200);
+      await as(producer).write('post', `/v1/materials/${m.id}/transitions`, { track: 'editorial', to: 'final_review', reason: 'cut done' }).expect(200);
+      expect((await as(editor).get(`/v1/materials/${m.id}`).expect(200)).body.reserved_by).toBe(producer.id);
+      await as(editor).write('post', `/v1/materials/${m.id}/transitions`, { track: 'editorial', to: 'published', reason: 'approved' }).expect(200);
+      expect((await as(editor).get(`/v1/materials/${m.id}`).expect(200)).body).toMatchObject({ editorial_state: 'published', reserved_by: null, reserved_at: null });
+      const row = await h.pool.query(`SELECT reserved_by, reserved_at FROM materials WHERE id = $1`, [m.id]);
+      expect(row.rows[0]).toEqual({ reserved_by: null, reserved_at: null });
+      const board = await as(editor).get('/v1/dashboard/newsroom').expect(200);
+      expect(board.body.reserved.some((r: { material_id: string }) => r.material_id === m.id)).toBe(false);
+    });
+
     it('an idle reservation is free to take over and is released by the sweep', async () => {
       const m = await create(reporterA);
       await setEditorial(m.id, 'accepted');

@@ -35,7 +35,7 @@ export function AssignmentCard({ locale, material }: { locale: Locale; material:
       <p><DueText task={open} now={now} locale={locale} /></p>
       <Link prefetch={false} className="button secondary" href={`/${locale}/tasks/${open.id}`}>{m.tasks.open}</Link>
     </> : <>
-      <p className="muted">{hasRole(me, "supervisor", "editor_in_chief") ? t.cardNone : t.cardNoneReader}</p>
+      <p className="muted" data-testid="assignment-none">{last?.state === "done" ? t.cardDone.replace("{name}", name(last)) : last || !hasRole(me, "supervisor", "editor_in_chief") ? t.cardNoneReader : t.cardNone}</p>
       {last && <p className="caption">{fill(t.cardLast, { state: m.tasks.state[last.state], time: formatDate(last.closed_at ?? last.updated_at, locale) })} · <Link prefetch={false} href={`/${locale}/tasks/${last.id}`}>{m.tasks.open}</Link></p>}
       <AssignButton locale={locale} material={material} onAssigned={(_, assignee) => { setNotice(t.done.replace("{name}", assignee)); setAttempt(n => n + 1); }} />
     </>}

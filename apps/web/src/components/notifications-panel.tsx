@@ -36,7 +36,7 @@ export function NotificationsPanel({ locale, onClose }: { locale: Locale; onClos
   async function readAll() {
     if (!checkedAt) return;
     const before = bulkBefore.current ?? new Date(checkedAt).toISOString(); bulkBefore.current = before;
-    if (await mutation.run(`read-all:${before}`, header => browserApi().POST("/notifications/read-all", { params: { header }, body: { before } }))) { bulkBefore.current = null; setAttempt(n => n + 1); }
+    if (await mutation.run(`read-all:${before}`, header => browserApi().POST("/notifications/read-all", { params: { header }, body: { before } }))) { bulkBefore.current = null; setAttempt(n => n + 1); window.dispatchEvent(new Event("notifications-read")); }
   }
   const visible = items ? panelOrder(items.filter(n => inTab(n, tab))) : [];
   const count = (which: PanelTab) => items?.filter(n => inTab(n, which)).length ?? 0;
