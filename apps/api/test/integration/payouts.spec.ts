@@ -309,7 +309,9 @@ describe('the payout reserve over the refund window', () => {
     );
     const created = (await post(r.token, '/me/payout-requests', { amount: { amount_minor: 9_000, currency: 'USD' }, channel: 'sandbox' }).expect(201)).body;
     await post(finance.token, `/payout-requests/${created.id}/approve`).expect(200);
-    expect(await h.app.get(PayoutWorker).settleApproved()).toBe(1);
+    // اكتمال الاعتماد يوقظ العامل بلا انتظار (payouts.controller): الدورة الجارية تُنتظر هنا، ثم يُقرأ الأثر لا عدد ما صرفه نداء بعينه
+    await h.app.get(PayoutWorker).tick();
+    expect((await http().get(`/v1/payout-requests/${created.id}`).set(as(r.token)).expect(200)).body.state).toBe('paid');
     expect(await balance(r.token)).toMatchObject({ available: { amount_minor: 1_000 }, paid: { amount_minor: 9_000 }, reserve: { amount_minor: 1_000 }, requestable: { amount_minor: 0 } });
     expect((await post(r.token, '/me/payout-requests', { amount: { amount_minor: 500, currency: 'USD' }, channel: 'sandbox' }).expect(422)).body.code).toBe('insufficient_available');
 
