@@ -1145,7 +1145,7 @@
     "firstPage": "Only your latest 100 materials are shown.",
     "action": "Needs your action",
     "noAction": "Nothing is waiting on you.",
-    "uploadFailed": "Upload failed; upload the file again from the material page.",
+    "uploadFailed": "Its file failed to upload. Upload it from the material's page.",
     "changesRequested": "Your supervisor asked for changes; reply from the material page.",
     "openForNote": "Open the material to read the note.",
     "at": "at",
@@ -1153,7 +1153,8 @@
       "all": "All my materials",
       "action": "Need your action",
       "reviewing": "In review",
-      "approved": "Approved"
+      "approved": "Approved",
+      "rejected": "Rejected"
     },
     "filtersLabel": "Filter the gallery",
     "filters": {
@@ -1195,7 +1196,9 @@
       "coverClosed": "Open the coverage to see its materials",
       "coverOpen": "Its materials follow this card"
     },
-    "loadFailed": "Your materials could not be loaded"
+    "loadFailed": "Your materials could not be loaded",
+    "awaitingFile": "Its file has not arrived yet. If the upload stopped, finish it from the material's page.",
+    "back": "Back to my materials"
   },
   "templates": {
     "nav": "License templates",
@@ -2367,7 +2370,8 @@
       "denied": "The inbox is for the newsroom team and reporters: it lists materials, which your role does not read.",
       "loadFailed": "The inbox could not be loaded",
       "loadFailedBody": "The server did not respond. We retry automatically every 15 seconds, and your filters are kept.",
-      "urgentOldest": "Oldest: {time} ago"
+      "urgentOldest": "Oldest: {time} ago",
+      "deniedReporter": "The inbox is for newsroom staff. Your materials are in “My materials”."
     },
     "material": {
       "breadcrumb": "Breadcrumb",
@@ -2955,5 +2959,26 @@
     "not_after": "Too late. Latest date: {date}.",
     "max_size_bytes": "File too large. Maximum size: {n} MB."
   },
-  "fieldUnavailable": "Not available on the web yet."
+  "fieldUnavailable": "Not available on the web yet.",
+  "previewNoFile": "No file has arrived yet.",
+  "owner": {
+    "title": "Your part in this material",
+    "changesTitle": "The supervisor asked for changes",
+    "resubmit": "Send back for review",
+    "resubmitLead": "The material goes back to the supervisor as “In review”.",
+    "whatChanged": "What did you change?",
+    "whatChangedHelp": "Say briefly what you changed. Do not include a precise location or a protected source name.",
+    "minChars": "At least five characters.",
+    "send": "Send for review",
+    "noFileTitle": "This material's file has not arrived yet",
+    "noFileBody": "If the upload stopped or was cancelled, upload the file here to complete the material, without creating a new one.",
+    "failedTitle": "This material's file failed to upload",
+    "failedBody": "Upload the file again to resume receiving the material.",
+    "uploadHere": "Upload the file for this material",
+    "retryReason": "Re-uploading the file from the material page",
+    "share": "Your share of this material: {share}",
+    "edit": "Edit the material's details",
+    "editLead": "Title, place and type. The states do not change, and the file is not touched.",
+    "save": "Save changes"
+  }
 }

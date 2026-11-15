@@ -7,7 +7,7 @@ async function login(page: Page, email: string, locale: "ar" | "en" = "ar") {
   await page.goto(`/${locale}/login`);
   await page.getByLabel(m.email).fill(email); await page.getByLabel(m.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(m.totp, { exact: true }).fill("123456");
   await page.getByRole("button", { name: m.signIn, exact: true }).click();
-  await page.waitForURL(/\/(inbox|my-materials)$/); if (!page.url().endsWith("/inbox")) await page.goto(page.url().replace(/[^/]+$/, "inbox")); await expect(page.getByTestId("material-row")).toHaveCount(50);
+  await page.waitForURL(/\/(inbox|my-materials)$/); if (page.url().endsWith("/inbox")) await expect(page.getByTestId("material-row")).toHaveCount(50); else await expect(page.getByTestId("mine-row").first()).toBeVisible();
 }
 test.beforeEach(async ({ request }) => { await request.post(`${api}/__test/reset`); });
 
