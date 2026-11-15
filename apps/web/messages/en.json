@@ -1094,8 +1094,19 @@
       "verified": "Received and fingerprint verified.",
       "duplicate": "We already have this file, so there's no need to upload it again.",
       "failed": "The upload failed.",
-      "failedHint": "Part of it was probably lost in transfer. Please upload it again."
-    }
+      "failedHint": "Part of it was probably lost in transfer. Please upload it again.",
+      "incompleteUnknown": "Incomplete upload"
+    },
+    "errors": {
+      "title": "The title is 5 to 80 characters.",
+      "governorate": "Enter the governorate.",
+      "city": "Enter the city.",
+      "shot_at": "The shooting time cannot be in the future.",
+      "pseudonym": "Enter the pseudonym, or choose another display name."
+    },
+    "requiresUnavailable": "This form requires “{fields}”, which cannot be filled on the web yet, so this material cannot be sent from here. Send it from the phone app, or ask the form administrators to make it optional.",
+    "reselectUnknown": "The browser doesn't keep the file after closing. Choose the same file to continue from where it stopped. A different file starts a new upload.",
+    "draftRestored": "We kept what you had typed before the session ended. Choose the files again to continue."
   },
   "mine": {
     "nav": "My materials",
@@ -2899,5 +2910,17 @@
     "دير البلح": "Deir al-Balah",
     "خان يونس": "Khan Yunis",
     "رفح": "Rafah"
-  }
+  },
+  "validationLimits": {
+    "min_length": "Too short. Minimum length: {n} characters.",
+    "max_length": "Too long. Maximum length: {n} characters.",
+    "min": "Too low. Minimum value: {n}.",
+    "max": "Too high. Maximum value: {n}.",
+    "min_items": "Choose more. Minimum number of items: {n}.",
+    "max_items": "Choose fewer. Maximum number of items: {n}.",
+    "not_before": "Too early. Earliest date: {date}.",
+    "not_after": "Too late. Latest date: {date}.",
+    "max_size_bytes": "File too large. Maximum size: {n} MB."
+  },
+  "fieldUnavailable": "Not available on the web yet."
 }

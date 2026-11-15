@@ -205,6 +205,7 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .upload-selection, .upload-pending ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: 12px; }
 .upload-pending h3 { font-size: 14px; margin: 6px 0; }
 .upload-base { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 8px; }
+.upload-field { display: grid; gap: 6px; align-content: start; }
 .upload-base fieldset { border: 1px solid var(--v2-c-border-line); border-radius: 6px; display: grid; gap: 8px; padding: 10px 12px; }
 .upload-base legend { font-size: 13px; font-weight: 600; }
 .upload-base .check { display: flex; gap: 8px; align-items: center; font-weight: 400; }
