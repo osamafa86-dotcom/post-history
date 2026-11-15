@@ -1,6 +1,6 @@
 import type { Field, Form, Material, Me, Permission, Values, Notification, TransitionRecord, NewsroomDashboard } from "./types";
 import { sensitivityState } from "./sensitivity";
-import { workName } from "./work-name";
+import { internalNames, workName } from "./work-name";
 import { uuid, states } from "./query";
 import { knownType } from "./notification-kind";
 import { validMaterialTags } from "./tag-policy";
@@ -13,8 +13,20 @@ export function redactValues(values: Values, form: Form | undefined, permissions
   const allowed = form?.fields.filter(f => mayReadField(f, permissions) && !redacted.includes(f.key)).map(f => f.key) ?? [];
   return Object.fromEntries(allowed.filter(k => Object.hasOwn(values, k)).map(k => [k, values[k]]));
 }
+/**
+ * ما يعرفه المتصفح عن صاحب الجلسة بقائمة بيضاء: اسم عمله الداخلي ومكتبه (سطر الحساب في الشريط)، وعلَم الجلسة المقيّدة بعد إعادة التعيين
+ * (فتُشرح له بدل «خارج صلاحيات دورك»). كل حقل يمرّ بصيغته من العقد وحدها، وما عداها يُحذف.
+ */
 export function safeMe(me: Me): Me {
-  return { user_id: me.user_id, email: me.email, roles: me.roles, permissions: me.permissions, totp_enabled: me.totp_enabled, ...(me.organization_id ? { organization_id: me.organization_id } : {}) };
+  // اسم العمل للطاقم وحده (ADR 0035): حساب المراسل والمشتري لا يحمله إلى المتصفح.
+  const name = internalNames(me) ? workName(me.work_name) : null;
+  return {
+    user_id: me.user_id, email: me.email, roles: me.roles, permissions: me.permissions, totp_enabled: me.totp_enabled,
+    ...(me.organization_id ? { organization_id: me.organization_id } : {}),
+    ...(name ? { work_name: name } : {}),
+    ...(typeof me.office_id === "string" && uuid.test(me.office_id) ? { office_id: me.office_id } : {}),
+    ...(me.credential_reset_required === true ? { credential_reset_required: true } : {}),
+  };
 }
 export function safeForm<T extends Form>(form: T, permissions: Permission[]): T {
   return { ...form, fields: form.fields.filter(field => mayReadField(field, permissions)) };

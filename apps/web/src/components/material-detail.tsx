@@ -21,6 +21,7 @@ import { Icon } from "./icon";
 import { MaterialTags, type TagNotice } from "./material-tags";
 import { materialTag } from "@/lib/review";
 import { sensitivityState } from "@/lib/sensitivity";
+import { untilVisible } from "@/lib/visibility";
 
 /**
  * تفاصيل المادة (W2، والجوال M2): المشغّل والعنوان وسطر الوصف والوسوم (وتعديلها للمشرف ورئيس التحرير، ADR 0105) وسطر الحساسية في العمود الرئيسي، والحالات الثلاث (أزرار تصفّي السجل)
@@ -35,6 +36,7 @@ export function MaterialDetail({ locale, id }: { locale: Locale; id: string }) {
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
     async function load() {
       if (editing.current) { timer = setTimeout(load, 15000); return; }
+      await untilVisible(controller.signal); if (controller.signal.aborted) return;
       try {
         const result = await browserApi().GET("/materials/{id}", { params: { path: { id } }, signal: controller.signal });
         const data = dataOrThrow(result);

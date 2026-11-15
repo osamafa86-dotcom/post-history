@@ -17,6 +17,7 @@ import { ConfirmDialog } from "./admin-parts";
 import { megabytes, uploadStage } from "./desktop-upload";
 import { fill } from "./render-dialog";
 import { Icon } from "./icon";
+import { untilVisible } from "@/lib/visibility";
 
 const exportPollMs = 10000;
 
@@ -36,6 +37,7 @@ export function TaskDetail({ locale, id }: { locale: Locale; id: string }) {
     if (!allowed) return;
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
     async function load() {
+      await untilVisible(controller.signal); if (controller.signal.aborted) return;
       try { const data = dataOrThrow(await browserApi().GET("/assignments/{assignment_id}", { params: { path: { assignment_id: id } }, signal: controller.signal })); if (!controller.signal.aborted) { setTask(data); setError(0); setNow(Date.now()); } }
       catch (e) { if (!controller.signal.aborted) setError(e instanceof RequestError ? e.status : 503); }
       finally { if (!controller.signal.aborted) timer = setTimeout(load, 30000); }

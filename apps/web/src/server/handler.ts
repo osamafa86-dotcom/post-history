@@ -66,6 +66,12 @@ async function bodyOf(request: Request, limit = 8192): Promise<Record<string, un
   } catch { throw new WebError(400, "request_failed"); }
 }
 
+/** مهلة `Retry-After` من الخادم بالثواني: عدد صحيح موجب حتى يوم واحد، وإلا لا شيء (لا تاريخ، ولا قيمة لا تُقرأ). */
+function retryAfter(response: Response): number | null {
+  const value = response.headers.get("Retry-After") ?? "";
+  return /^[1-9]\d{0,4}$/.test(value) && Number(value) <= 86400 ? Number(value) : null;
+}
+
 type Deps = { config: WebConfig; store: SessionStore; fetch?: typeof fetch };
 
 /** كل طلب يأخذ معرّف ترابط جديدًا: يُرسل مع نداءات الخادم كلها ويعود في ترويسة الرد. معرّف يرسله المتصفح لا يُقرأ. */
@@ -94,6 +100,8 @@ async function respond(request: NextRequest, path: string, deps?: Deps): Promise
       const body: components["schemas"]["LoginRequest"] = { email: input.email, password: input.password, ...(input.totp_code ? { totp_code: input.totp_code as string } : {}) };
       const result = await upstream(config, undefined, transport, clientAddress(request, config)).POST("/auth/login", { body });
       if (result.response.status === 401) throw new WebError(401, result.error?.code === "totp_required" ? "totp_required" : "login_failed");
+      // حدّ المعدّل ليس «بيانات خاطئة»: يصل المتصفح باسمه وبمهلته إن كانت عددًا معقولًا من الثواني، ولا شيء آخر من ردّ الخادم.
+      if (result.response.status === 429) { const wait = retryAfter(result.response); throw new WebError(429, "too_many_attempts", wait ? { retry_after_seconds: wait } : undefined); }
       requireOk(result); assertSession(result.data);
       const newId = await store.create(result.data);
       if (validSessionId(id)) await store.locked(id, () => store.remove(id));
@@ -111,6 +119,8 @@ async function respond(request: NextRequest, path: string, deps?: Deps): Promise
     const verification = /^license-verifications\/([^/]+)$/.exec(path);
     if (verification && request.method === "GET") return await licenseVerify(request, verification[1], config, transport);
 
+    // بلا كوكي جلسة أصلًا: زائر لم يدخل، لا جلسة أُبطلت؛ فلا تُقال له «أُبطلت الجلسة» ولا يُمحى ما ليس موجودًا.
+    if (!id) throw new WebError(401, "signed_out");
     if (!validSessionId(id)) throw new WebError(401, "session_revoked");
     const response = await withSession(id, store, config, async api => {
       if (path === "auth/logout" && isPost) {
@@ -257,6 +267,7 @@ async function respond(request: NextRequest, path: string, deps?: Deps): Promise
     const known = error instanceof WebError ? error : new WebError(503, "temporarily_unavailable");
     const response = json({ code: known.code, ...(known.details ? { details: known.details } : {}) }, known.status);
     if (known.status === 401 && config && known.code === "session_revoked") setSession(response, config, "");
+    if (known.status === 429 && typeof known.details?.retry_after_seconds === "number") response.headers.set("Retry-After", String(known.details.retry_after_seconds));
     return response;
   }
 }
