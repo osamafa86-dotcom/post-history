@@ -10,6 +10,56 @@ import Foundation
 open class CommerceAPI {
 
     /**
+     إلغاء دعوة لم يُكمل قبولها
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter orgId: (path) معرّف المؤسسة المشترية 
+     - parameter userId: (path)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: Void
+     */
+    open class func cancelBuyerMemberInvitation(idempotencyKey: String, orgId: UUID, userId: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) {
+        return try await cancelBuyerMemberInvitationWithRequestBuilder(idempotencyKey: idempotencyKey, orgId: orgId, userId: userId, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     إلغاء دعوة لم يُكمل قبولها
+     - DELETE /buyer-organizations/{org_id}/members/{user_id}/invitation
+     - قرار المنسّق 2026-11-15: لعضو حالته `invited` وحده (`409 invalid_transition` لغيره). يُبطَل رمز الدعوة ويتحرر المقعد ويخرج المدعو من قائمة الأعضاء؛ ودعوة البريد نفسه لاحقًا دعوة جديدة. يُسجَّل في التدقيق بلا البريد.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter orgId: (path) معرّف المؤسسة المشترية 
+     - parameter userId: (path)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<Void> 
+     */
+    open class func cancelBuyerMemberInvitationWithRequestBuilder(idempotencyKey: String, orgId: UUID, userId: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<Void> {
+        var localVariablePath = "/buyer-organizations/{org_id}/members/{user_id}/invitation"
+        let orgIdPreEscape = "\(APIHelper.mapValueToPathItem(orgId))"
+        let orgIdPostEscape = orgIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{org_id}", with: orgIdPostEscape, options: .literal, range: nil)
+        let userIdPreEscape = "\(APIHelper.mapValueToPathItem(userId))"
+        let userIdPostEscape = userIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{user_id}", with: userIdPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<Void>.Type = apiConfiguration.requestBuilderFactory.getNonDecodableBuilder()
+
+        return localVariableRequestBuilder.init(method: "DELETE", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      إلغاء طلب لم يُدفع
      
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
@@ -794,7 +844,7 @@ open class CommerceAPI {
     /**
      دعوة عضو إلى المؤسسة
      - POST /buyer-organizations/{org_id}/members
-     - يُنشأ حساب مشترٍ مرتبط بالمؤسسة وحدها، يعيّن كلمة مروره برمز دعوة يُسلَّم كرمز الاستعادة، ويُفعِّل TOTP عند أول دخول. البريد المستخدم لحساب آخر `409 conflict`، بلا تفريق بين طاقم ومشترٍ. حد المقاعد `seats` يُفرض هنا (`409 seats_exhausted`).
+     - يُنشأ حساب مشترٍ مرتبط بالمؤسسة وحدها، يعيّن كلمة مروره برمز دعوة يُسلَّم كرمز الاستعادة، ويُفعِّل TOTP عند أول دخول. البريد المستخدم لحساب آخر `409 conflict`، بلا تفريق بين طاقم ومشترٍ. حد المقاعد `seats` يُفرض هنا (`409 seats_exhausted`). بريد عضو في المؤسسة نفسها لم يُكمل قبول دعوته، أو أُلغيت دعوته، ليس تعارضًا: تُعاد دعوته برمز جديد يُبطل السابق (`201` كالدعوة الأولى، قرار المنسّق 2026-11-15).
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -1252,6 +1302,56 @@ open class CommerceAPI {
         let localVariableRequestBuilder: RequestBuilder<OrderPage>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     إعادة إصدار رمز دعوة عضو لم يُكمل قبولها
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter orgId: (path) معرّف المؤسسة المشترية 
+     - parameter userId: (path)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: BuyerMemberCreated
+     */
+    open class func reissueBuyerMemberInvitation(idempotencyKey: String, orgId: UUID, userId: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> BuyerMemberCreated {
+        return try await reissueBuyerMemberInvitationWithRequestBuilder(idempotencyKey: idempotencyKey, orgId: orgId, userId: userId, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     إعادة إصدار رمز دعوة عضو لم يُكمل قبولها
+     - POST /buyer-organizations/{org_id}/members/{user_id}/invitation
+     - قرار المنسّق 2026-11-15: لعضو حالته `invited` وحده (`409 invalid_transition` لغيره). يُبطَل الرمز السابق ويصدر رمز جديد يُسلَّم كالأول (في الرد مرة واحدة، أو بقناة التسليم)، ولو كان المدعو قد استعمل رمزه الأول ولم يُكمل ربط التحقق بخطوتين: يبدأ من جديد بالرمز الجديد. سرّ التحقق المعلّق لا يُعرض ثانية. لا مقعد إضافي. يُسجَّل في التدقيق بلا البريد.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter orgId: (path) معرّف المؤسسة المشترية 
+     - parameter userId: (path)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<BuyerMemberCreated> 
+     */
+    open class func reissueBuyerMemberInvitationWithRequestBuilder(idempotencyKey: String, orgId: UUID, userId: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<BuyerMemberCreated> {
+        var localVariablePath = "/buyer-organizations/{org_id}/members/{user_id}/invitation"
+        let orgIdPreEscape = "\(APIHelper.mapValueToPathItem(orgId))"
+        let orgIdPostEscape = orgIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{org_id}", with: orgIdPostEscape, options: .literal, range: nil)
+        let userIdPreEscape = "\(APIHelper.mapValueToPathItem(userId))"
+        let userIdPostEscape = userIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{user_id}", with: userIdPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<BuyerMemberCreated>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }
 
     /**
