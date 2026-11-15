@@ -57,10 +57,37 @@ export async function activePolicy(executor: Executor, config: AppConfig, curren
   };
 }
 
-/** الاحتياطي من المتاح بنسبة السياسة، مقرَّبًا لأعلى فلا يُطلب سنت منه. */
-export function reserveOf(available: bigint, bps: number): bigint {
-  if (available <= 0n || bps === 0) return 0n;
-  return (available * BigInt(bps) + 9_999n) / 10_000n;
+/** نسبة السياسة من أساس الاحتياطي، مقرَّبة لأعلى فلا يُطلب سنت منها. */
+export function reserveOf(base: bigint, bps: number): bigint {
+  if (base <= 0n || bps === 0) return 0n;
+  return (base * BigInt(bps) + 9_999n) / 10_000n;
+}
+
+/**
+ * الاحتياطي والقابل للطلب (ADR 0031، تعديل 2026-11-15): الاحتياطي نسبة السياسة من كل ما قد يطاله استرداد عند المساهم، أي المتاح
+ * وما حُجز لطلب صرف وما صُرف خلال فترة الاسترداد، ويُحتجز من المتاح. فتقسيم المبلغ على طلبات لا ينقصه، وما صُرف يخرج من
+ * أساسه حين تنقضي فترة الاسترداد.
+ */
+export function reserveAndRequestable(b: { available: bigint; inPayout: bigint; paidRecently: bigint }, bps: number): { reserve: bigint; requestable: bigint } {
+  const reserve = reserveOf(b.available + b.inPayout + b.paidRecently, bps);
+  return { reserve, requestable: b.available > reserve ? b.available - reserve : 0n };
+}
+
+/** ما صُرف لكل مساهم وعملة خلال فترة الاسترداد (`PAYOUT_RELEASE_AFTER_DAYS`)، بمفتاح `<المساهم>:<العملة>`؛ الغائب صفر. */
+export async function paidWithinRefundWindow(executor: Executor, config: AppConfig, userIds: readonly string[]): Promise<Map<string, bigint>> {
+  if (userIds.length === 0) return new Map();
+  const rows = await executor
+    .select({ userId: payoutRequests.userId, currency: payoutRequests.currency, total: sql<string>`sum(${payoutRequests.amountMinor})::text` })
+    .from(payoutRequests)
+    .where(
+      and(
+        inArray(payoutRequests.userId, [...userIds]),
+        eq(payoutRequests.state, 'paid'),
+        sql`${payoutRequests.completedAt} > now() - make_interval(days => ${config.PAYOUT_RELEASE_AFTER_DAYS})`,
+      ),
+    )
+    .groupBy(payoutRequests.userId, payoutRequests.currency);
+  return new Map(rows.map((r) => [`${r.userId}:${r.currency}`, BigInt(r.total)]));
 }
 
 @Injectable()
@@ -77,13 +104,16 @@ export class PayoutsService {
     const rows = await this.db.selectDistinct({ currency: ledgerAccounts.currency }).from(ledgerAccounts).where(and(eq(ledgerAccounts.kind, 'contributor_payable'), eq(ledgerAccounts.ownerId, userId)));
     const currencies = CURRENCIES.filter((c) => rows.some((r) => r.currency === c));
     const balances: EarningsBalance[] = [];
+    const recent = await paidWithinRefundWindow(this.db, this.config, [userId]);
     for (const currency of currencies) {
       const [pending, available, inPayout, paid] = await Promise.all(
         (['pending', 'available', 'in_payout', 'paid'] as PayableState[]).map((s) => payable(this.db, userId, s, currency)),
       );
       const policy = await activePolicy(this.db, this.config, currency);
-      const reserve = reserveOf(available!.amountMinor, policy.reserveBps);
-      const requestable = available!.amountMinor > reserve ? available!.amountMinor - reserve : 0n;
+      const { reserve, requestable } = reserveAndRequestable(
+        { available: available!.amountMinor, inPayout: inPayout!.amountMinor, paidRecently: recent.get(`${userId}:${currency}`) ?? 0n },
+        policy.reserveBps,
+      );
       balances.push({
         currency,
         pending: toContract(pending!),
@@ -155,7 +185,7 @@ export class PayoutsService {
   // ---------- طلبات الصرف ----------
 
   /**
-   * طلب صرف: تحت قفل حساب «المتاح» يُحسب القابل للطلب (المتاح بعد الاحتياطي)، ثم قيد `payout` يحجز المبلغ في «قيد الصرف»
+   * طلب صرف: تحت قفل حسابَي «المتاح» و«قيد الصرف» يُحسب القابل للطلب (المتاح بعد الاحتياطي)، ثم قيد `payout` يحجز المبلغ في «قيد الصرف»
    * والطلب وحدثه وتدقيقه في المعاملة نفسها. القاعدة ترفض ما يجعل المتاح مدينًا ولو تجاوز الخادمَ طلبان.
    */
   async create(userId: string, input: PayoutRequestCreate): Promise<PayoutRequest> {
@@ -169,8 +199,11 @@ export class PayoutsService {
         { kind: 'contributor_payable', ownerId: userId, state: 'in_payout', currency },
       ]);
       const available = (await payable(tx, userId, 'available', currency)).amountMinor;
-      const reserve = reserveOf(available, policy.reserveBps);
-      if (amount > available - reserve) throw new ApiError(422, 'insufficient_available', 'The amount exceeds the requestable balance.');
+      const inPayout = (await payable(tx, userId, 'in_payout', currency)).amountMinor;
+      const paidRecently = (await paidWithinRefundWindow(tx, this.config, [userId])).get(`${userId}:${currency}`) ?? 0n;
+      if (amount > reserveAndRequestable({ available, inPayout, paidRecently }, policy.reserveBps).requestable) {
+        throw new ApiError(422, 'insufficient_available', 'The amount exceeds the requestable balance.');
+      }
       const id = randomUUID();
       let hold: string;
       try {
@@ -279,9 +312,14 @@ export class PayoutsService {
     return { items: await Promise.all(rows.map((r) => this.policyDto(this.db, r))) };
   }
 
-  /** إصدار جديد لا يعدّل سابقه؛ عملتا المبلغين عملة السياسة (422)، والعملة والتاريخ نفسيهما 409. */
+  /** إصدار جديد لا يعدّل سابقه؛ عملتا المبلغين عملة السياسة والحد الأدنى أكبر من صفر (422)، والعملة والتاريخ نفسيهما 409. */
   async createPolicy(actorId: string, input: PayoutPolicyInput): Promise<PayoutPolicy> {
-    const wrong = [input.minimum.currency !== input.currency && '/minimum/currency', input.dual_approval_above.currency !== input.currency && '/dual_approval_above/currency'].filter(Boolean) as string[];
+    const wrong = [
+      input.minimum.currency !== input.currency && '/minimum/currency',
+      // حد أدنى صفر يقبل طلب صرف بلا مبلغ؛ القاعدة ترفضه بقيدها، فيُرفض هنا باسم حقله لا بخطأ خادم
+      input.minimum.amount_minor < 1 && '/minimum/amount_minor',
+      input.dual_approval_above.currency !== input.currency && '/dual_approval_above/currency',
+    ].filter(Boolean) as string[];
     if (wrong.length > 0) throw ApiError.validation({ fields: wrong });
     return this.db.transaction(async (tx) => {
       let row: PolicyRow;

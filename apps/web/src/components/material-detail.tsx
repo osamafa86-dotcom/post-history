@@ -1,4 +1,5 @@
 "use client";
+import { governorateName } from "@/lib/format";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { browserApi, dataOrThrow, RequestError } from "@/lib/browser-api";
@@ -6,7 +7,7 @@ import { formatDate, messages, plural, shortTime, type Locale } from "@/lib/i18n
 import type { Form, Material, TransitionRecord } from "@/lib/types";
 import { internalNames } from "@/lib/work-name";
 import { lastEvents, timecode, timeline, type Track } from "@/lib/editor";
-import { stateColumn, tracks } from "@/lib/review";
+import { hasRole, stateColumn, tracks } from "@/lib/review";
 import { useUser } from "./session-boundary";
 import { photographer, StateBadge } from "./states";
 import { DynamicForm } from "./dynamic-form";
@@ -18,6 +19,8 @@ import { AssignmentCard } from "./assignment-card";
 import { EmptyState, ErrorState } from "./empty-state";
 import { Icon } from "./icon";
 import { MaterialTags, type TagNotice } from "./material-tags";
+import { OwnerPanel } from "./owner-panel";
+import { homePage, reporterOnly } from "@/lib/home-page";
 import { materialTag } from "@/lib/review";
 import { sensitivityState } from "@/lib/sensitivity";
 import { untilVisible } from "@/lib/visibility";
@@ -55,7 +58,9 @@ export function MaterialDetail({ locale, id }: { locale: Locale; id: string }) {
     return () => controller.abort();
   }, [id, attempt]);
 
-  const crumbs = (title?: string) => <nav className="breadcrumb" aria-label={w.breadcrumb}><Link prefetch={false} className="back-link" href={`/${locale}/inbox`} aria-label={m.back}>{m.inbox}</Link>{title && <><span className="breadcrumb-sep"><Icon name="chevron" size={14} /></span><span aria-current="page">{title}</span></>}</nav>;
+  // فتات الخبز يعود إلى صفحة بداية الدور باسمها: المراسل إلى «موادي» لا إلى وارد الطاقم.
+  const start = homePage(me), home = start === "my-materials" ? start : "inbox", owner = hasRole(me, "reporter") && material?.reporter_id === me.user_id, staffless = reporterOnly(me);
+  const crumbs = (title?: string) => <nav className="breadcrumb" aria-label={w.breadcrumb}><Link prefetch={false} className="back-link" href={`/${locale}/${home}`} aria-label={home === "my-materials" ? m.mine.back : m.back}>{home === "my-materials" ? m.mine.nav : m.inbox}</Link>{title && <><span className="breadcrumb-sep"><Icon name="chevron" size={14} /></span><span aria-current="page">{title}</span></>}</nav>;
   if (error) return <>{crumbs()}{error === 403 || error === 404 ? <EmptyState icon={error === 403 ? "key" : "search"} role="alert" title={error === 404 ? m.notFound : m.material.outOfScope} actions={<button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button>} />
     : <ErrorState locale={locale} testId="material-error" title={m.material.loadFailed} retry={() => setAttempt(n => n + 1)} />}</>;
   if (!material) return <>{crumbs()}<p className="visually-hidden" role="status">{m.loading}</p><div className="material-layout" aria-hidden="true"><div className="material-main"><span className="skeleton media" /><span className="skeleton line wide" /><span className="skeleton line" /></div><div className="material-side"><span className="skeleton card" /><span className="skeleton card" /></div></div></>;
@@ -65,15 +70,16 @@ export function MaterialDetail({ locale, id }: { locale: Locale; id: string }) {
   return <>{crumbs(material.title)}{toast && <p className="toast" role="status">{m.review.transitioned.replace("{state}", toast)}</p>}
     <div className="material-layout">
       <div className="material-main">
+        {owner && <OwnerPanel key={`${material.id}:owner`} locale={locale} material={material} tag={tag} records={records} editing={() => { editing.current = true; }} release={() => { editing.current = false; }} reload={reload} notify={setToast} />}
         <MediaPreview locale={locale} material={material} />
-        <div className="material-title"><h1>{material.title}</h1>{material.priority !== "normal" && <span className={`priority-pill ${material.priority}`}>{material.priority === "urgent" && <Icon name="bolt" size={12} />}{m.states.priority[material.priority]}</span>}</div>
-        <p className="material-meta"><span>{photographer(material, locale)}</span><span>{material.governorate}</span><span>{material.city}</span>{time && <span>{w.shot} <bdi dir="ltr">{time}</bdi></span>}{material.material_types.map(type => <span key={type}>{(m.types as Record<string, string>)[type] ?? type}</span>)}{files > 0 && <span>{plural(files, m.shell.inbox.files, locale)}</span>}<span>{m.version} <bdi dir="ltr">{material.version}</bdi></span><span className="receipt"><bdi dir="ltr">{receipt ?? m.noReceipt}</bdi></span>{material.acknowledged_at && <span>{m.material.acknowledged} {formatDate(material.acknowledged_at, locale)}</span>}</p>
+        <div className="material-title"><h1><bdi dir="auto">{material.title}</bdi></h1>{material.priority !== "normal" && <span className={`priority-pill ${material.priority}`}>{material.priority === "urgent" && <Icon name="bolt" size={12} />}{m.states.priority[material.priority]}</span>}</div>
+        <p className="material-meta"><span>{photographer(material, locale)}</span><span>{governorateName(material.governorate, m.governorates)}</span><span>{material.city}</span>{time && <span>{w.shot} <bdi dir="ltr">{time}</bdi></span>}{material.material_types.map(type => <span key={type}>{(m.types as Record<string, string>)[type] ?? type}</span>)}{files > 0 && <span>{plural(files, m.shell.inbox.files, locale)}</span>}<span>{m.version} <bdi dir="ltr">{material.version}</bdi></span><span className="receipt"><bdi dir="ltr">{receipt ?? m.noReceipt}</bdi></span>{material.acknowledged_at && <span>{m.material.acknowledged} {formatDate(material.acknowledged_at, locale)}</span>}</p>
         <MaterialTags key={`${material.id}:tags`} locale={locale} material={material} tag={tag} notice={tagNotice} setNotice={setTagNotice} editing={() => { editing.current = true; }} release={() => { editing.current = false; }} reload={reload} />
         <p className={`sensitivity-line${!sensitivity.known ? " unknown" : sensitivity.flags.length ? " flagged" : ""}`} data-testid="sensitivity-line"><Icon name={sensitivity.known ? "shield" : "alert"} size={18} /><span><strong>{w.sensitivity}: </strong>{!sensitivity.known ? <>{w.sensitivityUnknown} — {w.unknownRule}</> : sensitivity.flags.length ? <>{sensitivity.flags.map(flag => m.upload[flag]).join(m.shell.listSeparator)} — {w.sensitiveRule}</> : w.notSensitive}</span></p>
-        <section className="card"><h2>{m.details}</h2><dl className="metadata">{[[m.photographer, photographer(material, locale)], [m.governorate, material.governorate], [m.city, material.city], [m.shotAt, formatDate(material.shot_at, locale)], [m.createdAt, formatDate(material.created_at, locale)], [m.receipt, receipt ?? m.noReceipt], [m.formVersion, material.form_version]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section>
+        <section className="card"><h2>{m.details}</h2><dl className="metadata">{[[m.photographer, photographer(material, locale)], [m.governorate, governorateName(material.governorate, m.governorates)], [m.city, material.city], [m.shotAt, formatDate(material.shot_at, locale)], [m.createdAt, formatDate(material.created_at, locale)], [m.receipt, receipt ?? m.noReceipt], [m.formVersion, material.form_version]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section>
         <section className="card"><h2>{m.dynamicData}</h2>{material.redacted_field_keys?.length ? <p className="notice locked">{m.hiddenFields}</p> : null}{schema && Object.keys(material.dynamic_fields).length ? <DynamicForm key={`${material.id}-${material.updated_at}`} schema={schema} type={material.material_types[0]} permissions={me.permissions} locale={locale} initialValues={material.dynamic_fields} readOnly /> : <p className="muted">{schema ? m.noDynamic : m.formMissing}</p>}</section>
         <ListingPanel key={`${material.id}:listing:${material.rights_state}`} locale={locale} material={material} />
-        <Contributors key={`${material.id}:contributors:${tag}`} locale={locale} material={material} tag={tag} editing={() => { editing.current = true; }} reload={reload} />
+        {staffless ? <OwnShare locale={locale} material={material} userId={me.user_id} /> : <Contributors key={`${material.id}:contributors:${tag}`} locale={locale} material={material} tag={tag} editing={() => { editing.current = true; }} reload={reload} />}
       </div>
       <div className="material-side">
         <section className="card states-card" aria-labelledby="states-title"><h2 id="states-title">{w.states}</h2>
@@ -81,13 +87,21 @@ export function MaterialDetail({ locale, id }: { locale: Locale; id: string }) {
             <span className="state-card-text"><span className="state-card-title">{names[track]}</span><small>{last[track] ? `${formatDate(last[track]!.occurred_at, locale)}` : m.material.noEvent}</small></span>
             <StateBadge track={stateColumn[track]} value={material[stateColumn[track]]} locale={locale} /></button>)}</div>
           <p className="caption">{w.statesHelp}</p></section>
-        <ReviewActions key={`${material.id}:${tag}`} locale={locale} material={material} tag={tag} editing={() => { editing.current = true; }} reload={reload} notify={setToast} />
+        {/* المراسل بلا دور مكتب: أفعاله في شريط صاحب المادة أعلى الصفحة، فلا بطاقة «الخطوة التالية» بلغة الطاقم. */}
+        {!staffless && <ReviewActions key={`${material.id}:${tag}`} locale={locale} material={material} tag={tag} editing={() => { editing.current = true; }} reload={reload} notify={setToast} />}
         <AssignmentCard key={`${material.id}:assignments:${material.editorial_state}`} locale={locale} material={material} />
         <RenderFiles key={`${material.id}:renders`} locale={locale} material={material} />
         <Timeline internal={internalNames(me)} locale={locale} records={records} failed={historyFailed} filter={filter} clear={() => setFilter(null)} />
       </div>
     </div>
   </>;
+}
+
+/** حصة المراسل من مادته سطرًا يُقرأ، لا نموذج المساهمين المعطّل (هو لمسؤول الحقوق). بلا حصة مسجّلة لا يُعرض شيء. */
+function OwnShare({ locale, material, userId }: { locale: Locale; material: Material; userId: string }) {
+  const o = messages[locale].owner, mine = material.contributors?.find(row => row.user_id === userId);
+  if (!mine) return null;
+  return <p className="owner-share" data-testid="owner-share">{o.share.split("{share}")[0]}<bdi dir="ltr">{mine.share_percent}%</bdi>{o.share.split("{share}")[1]}</p>;
 }
 
 /** السجل: الأحداث تنازليًا، كل حدث بلون مساره؛ السبب يظهر لمن يعيده الـBFF وحده (صاحب المادة). */
@@ -100,7 +114,7 @@ function Timeline({ internal, locale, records, failed, filter, clear }: { intern
       : <ol className="history-list">{items.map(item => <li key={item.id} className={`track-${item.track}`}>
         <span className="timeline-dot" aria-hidden="true" />
         <p><strong>{names[item.track as Track] ?? item.track}</strong>: {label(item, item.from)} {locale === "ar" ? "←" : "→"} {label(item, item.to)}{item.note_timecode_ms != null && <span className="time-chip" dir="ltr">{timecode(item.note_timecode_ms)}</span>}</p>
-        {item.reason && <blockquote className="supervisor-note"><p>{m.review.note}: «{item.reason}»</p></blockquote>}
+        {item.reason && <blockquote className="supervisor-note"><p>{m.review.note}: «<bdi dir="auto">{item.reason}</bdi>»</p></blockquote>}
         <p className="caption">{formatDate(item.occurred_at, locale)} · {m.review.actor}: <bdi>{internal && item.actor_name ? item.actor_name : m.material.neutralActor}</bdi></p></li>)}</ol>}
   </section>;
 }

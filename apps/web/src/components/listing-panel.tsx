@@ -6,7 +6,7 @@ import type { Material } from "@/lib/types";
 import { hasRole } from "@/lib/review";
 import { useMutation } from "@/lib/use-mutation";
 import { formatMoney, localized } from "@/lib/store-format";
-import type { Template } from "@/lib/license-policy";
+import { shortTextMax, type Template } from "@/lib/license-policy";
 import { emptyListing, inputOf, listingInput, listingLimits, listingReaders, listingStates, listingWriters, type Listing, type ListingInput } from "@/lib/listing-policy";
 import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
@@ -63,10 +63,10 @@ export function ListingPanel({ locale, material }: { locale: Locale; material: M
   </section>;
 }
 
-function Bilingual({ legend, value, change, area, names }: { legend: string; value: { ar: string; en: string }; change: (next: { ar: string; en: string }) => void; area?: boolean; names: { ar: string; en: string } }) {
+function Bilingual({ legend, value, change, area, names, max = 4000 }: { legend: string; value: { ar: string; en: string }; change: (next: { ar: string; en: string }) => void; area?: boolean; names: { ar: string; en: string }; max?: number }) {
   return <fieldset className="check-group bilingual"><legend>{legend}</legend>{(["ar", "en"] as const).map(lang => <label key={lang}>{names[lang]}{area
     ? <textarea lang={lang} dir={lang === "ar" ? "rtl" : "ltr"} rows={4} maxLength={4000} value={value[lang]} onChange={e => change({ ...value, [lang]: e.target.value })} />
-    : <input lang={lang} dir={lang === "ar" ? "rtl" : "ltr"} maxLength={4000} value={value[lang]} onChange={e => change({ ...value, [lang]: e.target.value })} />}</label>)}</fieldset>;
+    : <input lang={lang} dir={lang === "ar" ? "rtl" : "ltr"} maxLength={max} value={value[lang]} onChange={e => change({ ...value, [lang]: e.target.value })} />}</label>)}</fieldset>;
 }
 
 function ListingForm({ locale, draft, templates, set, admin, sellable, busy, invalid, status, onSave, onCancel }: { locale: Locale; draft: ListingInput; templates: Template[]; set: <K extends keyof ListingInput>(key: K, value: ListingInput[K]) => void; admin: boolean; sellable: boolean; busy: boolean; invalid: boolean; status: number; onSave: () => void; onCancel: () => void }) {
@@ -75,7 +75,7 @@ function ListingForm({ locale, draft, templates, set, admin, sellable, busy, inv
   const toggle = (template: Template) => set("offers", offered(template.id) ? draft.offers.filter(o => o.license_template_id !== template.id) : [...draft.offers, { license_template_id: template.id, price_override: null }]);
   const override = (id: string, value: string, currency: "USD" | "ILS") => set("offers", draft.offers.map(o => o.license_template_id === id ? { ...o, price_override: value === "" ? null : { amount_minor: Math.round(Number(value) * 100), currency } } : o));
   return <form className="form-card rule-form" noValidate onSubmit={e => { e.preventDefault(); onSave(); }}>
-    <Bilingual names={names} legend={t.listingTitle} value={draft.title} change={v => set("title", v)} />
+    <Bilingual names={names} legend={t.listingTitle} value={draft.title} change={v => set("title", v)} max={shortTextMax} />
     <Bilingual names={names} legend={t.description} value={draft.description} change={v => set("description", v)} area />
     <fieldset className="check-group"><legend>{t.offers}</legend><small className="muted">{t.offersHelp}</small>
       {!templates.length && <p className="muted">{t.noTemplates}</p>}

@@ -23,6 +23,8 @@ export interface PaymentProvider {
   verifyWebhook(rawBody: Buffer, headers: Record<string, string | undefined>, now?: Date): ProviderEvent;
   refund(input: { providerRef: string; amount: Money; idempotencyKey: string }): Promise<{ refundRef: string }>;
   status(providerRef: string): Promise<ProviderPaymentStatus>;
+  /** يُبطل جلسة دفع لم تُدفع (الطلب أُلغي)، فلا تُقبض دفعة لطلب ملغى. بلا أثر على جلسة مجهولة أو منتهية أو مدفوعة. */
+  cancelCheckout(providerRef: string): Promise<void>;
 }
 
 export const PAYMENT_PROVIDER = Symbol('PAYMENT_PROVIDER');
@@ -91,12 +93,12 @@ function parseEvent(rawBody: Buffer): ProviderEvent {
 
 /**
  * المزوّد التجريبي (ADR 0032): صفحة دفع داخلية لا تطلب بطاقة، وإشعار موقَّع بـ SANDBOX_WEBHOOK_SECRET إلى نقطة الإشعار
- * نفسها. لا يعمل في الإنتاج (فحص الإعداد عند الإقلاع). الحالة في الذاكرة، تكفي للاختبار والتسوية في بيئة واحدة.
+ * نفسها. لا يعمل في الإنتاج (فحص الإعداد عند الإقلاع). جلسات الدفع في الذاكرة، تكفي للاختبار والتسوية في بيئة واحدة؛ والاسترداد
+ * لا حالة له هنا: مرجعه مشتق من مفتاح منع التكرار، ومبلغه يُقرأ من سجل الاسترداد في القاعدة عند تأكيده، فيبقى بعد إعادة التشغيل.
  */
 export class SandboxPaymentProvider implements PaymentProvider {
   readonly name = 'sandbox';
   private readonly payments = new Map<string, { status: ProviderPaymentStatus; amount: Money; checkoutKey: string; returnUrl: string; locale: CheckoutLocale }>();
-  private readonly refunds = new Map<string, { refundRef: string; amount: Money }>();
 
   constructor(
     private readonly secret: string,
@@ -118,12 +120,14 @@ export class SandboxPaymentProvider implements PaymentProvider {
   }
 
   async refund(input: { providerRef: string; amount: Money; idempotencyKey: string }): Promise<{ refundRef: string }> {
-    const known = this.refunds.get(input.idempotencyKey);
-    if (known) return { refundRef: known.refundRef };
-    // التجريبي لا يحفظ إلا ما مرّ بصفحته؛ الخادم يرد الاسترداد لطلب مدفوع وحده (قيد القاعدة)، فلا فحص هنا
-    const refundRef = `sbr_${randomBytes(16).toString('hex')}`;
-    this.refunds.set(input.idempotencyKey, { refundRef, amount: input.amount });
-    return { refundRef };
+    // المرجع من مفتاح منع التكرار وحده: المفتاح نفسه يعيد المرجع نفسه ولو أُعيد تشغيل الخادم بينهما. الخادم يرد الاسترداد
+    // لطلب مدفوع وحده (قيد القاعدة)، فلا فحص هنا
+    return { refundRef: `sbr_${createHmac('sha256', this.secret).update(`refund:${input.idempotencyKey}`).digest('hex').slice(0, 32)}` };
+  }
+
+  async cancelCheckout(providerRef: string): Promise<void> {
+    // جلسة لم تُدفع تُغلق: صفحتها وأزرارها 404 بعدها. المدفوعة تبقى، فحالتها تُقرأ بـ status()
+    if (this.payments.get(providerRef)?.status === 'pending') this.payments.delete(providerRef);
   }
 
   async status(providerRef: string): Promise<ProviderPaymentStatus> {
@@ -145,11 +149,9 @@ export class SandboxPaymentProvider implements PaymentProvider {
     return this.payments.get(providerRef)?.amount;
   }
 
-  /** تأكيد استرداد تجريبي: الإشعار الموقَّع `refund.succeeded` بمرجع الاسترداد ومبلغه، أو undefined للمرجع المجهول. */
-  settleRefund(refundRef: string, now = new Date()): { body: Buffer; headers: Record<string, string> } | undefined {
-    const refund = [...this.refunds.values()].find((r) => r.refundRef === refundRef);
-    if (!refund) return undefined;
-    return this.signed({ type: 'refund.succeeded', providerRef: refundRef, amount: refund.amount }, now);
+  /** تأكيد استرداد تجريبي: الإشعار الموقَّع `refund.succeeded` بمرجع الاسترداد ومبلغه كما سُجّلا في القاعدة. */
+  settleRefund(refundRef: string, amount: Money, now = new Date()): { body: Buffer; headers: Record<string, string> } {
+    return this.signed({ type: 'refund.succeeded', providerRef: refundRef, amount }, now);
   }
 
   /** ما تفعله صفحة الدفع التجريبية عند الضغط على نتيجة: تسجّل الحالة وتبني الإشعار الموقَّع (جسمه وترويستيه). */

@@ -11,17 +11,21 @@ function summary(offer: Offer, locale: Locale) {
   return [s.licenseTypes[offer.type], offer.terms ? (days ? plural(days, s.item.termDays, locale) : s.item.noTerm) : null].filter(Boolean).join(s.catalog.listSeparator);
 }
 
-// اختيار الترخيص (S2): بطاقات راديو حقيقية بسعر كلٍّ منها؛ الحصري يُعطَّل حين لا يتاح (exclusive_available=false)، والتجاري يحتاج موافقة الإدارة.
-export function LicensePicker({ locale, offers, exclusiveAvailable, exclusiveUntil, value, onChange }: { locale: Locale; offers: Offer[]; exclusiveAvailable: boolean; exclusiveUntil?: string | null; value: string | null; onChange: (id: string) => void }) {
-  const s = messages[locale].store;
+// اختيار الترخيص (S2): بطاقات راديو حقيقية بسعر كلٍّ منها. حصرية نشطة على المادة (`exclusiveUntil`) تعطّل العروض كلها حتى نهايتها، فالخادم لا يبيع
+// عليها ترخيصًا قبلها، ويُقال لصاحبها إنها له (`ownExclusive`). والحصري وحده يُعطَّل حين لا يتاح لسبب آخر (exclusive_available=false: محجوز في طلب
+// جارٍ أو بيعت المادة بغير حصري). والتجاري يحتاج موافقة الإدارة. ما تملكه المؤسسة ساريًا يُسمّى برقم ترخيصه (`owned`).
+export function LicensePicker({ locale, offers, exclusiveAvailable, exclusiveUntil, ownExclusive = false, owned, value, onChange }: { locale: Locale; offers: Offer[]; exclusiveAvailable: boolean; exclusiveUntil?: string | null; ownExclusive?: boolean; owned?: Record<string, string>; value: string | null; onChange: (id: string) => void }) {
+  const s = messages[locale].store, held = exclusiveUntil ? formatDate(exclusiveUntil, locale) : null;
   if (!offers.length) return <p className="notice">{s.unavailable}</p>;
   return <fieldset className="license-picker"><legend>{s.chooseLicense}</legend>
+    {held && <p className="notice attention" data-testid="exclusive-held">{(ownExclusive ? s.heldByYou : s.heldUntil).replace("{date}", held)}</p>}
     {offers.map(offer => {
-      const blocked = offer.type === "exclusive_temporary" && !exclusiveAvailable;
+      const blocked = !!held || (offer.type === "exclusive_temporary" && !exclusiveAvailable), number = owned?.[offer.id];
       return <div key={offer.id} className="license-choice"><label className={`license-option${blocked ? " blocked" : ""}`}>
         <input type="radio" name="license" value={offer.id} checked={value === offer.id} disabled={blocked} onChange={() => onChange(offer.id)} />
         <span className="license-option-text"><strong>{localized(offer.name, locale)}</strong><small>{summary(offer, locale)}</small>
-          {blocked ? <small className="field-error">{exclusiveUntil ? s.exclusiveUntil.replace("{date}", formatDate(exclusiveUntil, locale)) : s.exclusiveTaken}</small> : offer.type === "exclusive_temporary" && <small className="license-option-note">{s.browse.holdNote}</small>}
+          {blocked ? <small className="field-error">{held ? s.offerHeld.replace("{date}", held) : s.exclusiveTaken}</small> : offer.type === "exclusive_temporary" && <small className="license-option-note">{s.browse.holdNote}</small>}
+          {number && <small className="license-option-note" data-testid="owned-license">{s.ownedLicense.split("{number}")[0]}<bdi dir="ltr" className="ref">{number}</bdi>{s.ownedLicense.split("{number}")[1]}</small>}
           {offer.type === "commercial" && <small className="license-option-note">{s.needsApproval}</small>}</span>
         <strong dir="ltr" className="license-price">{formatMoney(offer.price, locale)}</strong>
       </label>{offer.terms && <OfferTerms terms={offer.terms} locale={locale} />}</div>;
