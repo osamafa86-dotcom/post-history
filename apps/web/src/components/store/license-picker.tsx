@@ -2,6 +2,7 @@
 import type { components } from "@/generated/schema";
 import { formatDate, messages, plural, type Locale } from "@/lib/i18n";
 import { formatMoney, localized, type LicenseType, type Localized, type Price } from "@/lib/store-format";
+import { delivered } from "@/lib/license-policy";
 
 export type Offer = { id: string; type: LicenseType; name: Localized; price: Price; terms?: components["schemas"]["LicenseTerms"] };
 
@@ -40,7 +41,7 @@ function OfferTerms({ terms, locale }: { terms: components["schemas"]["LicenseTe
     [t.territory, terms.territory.kind === "worldwide" ? t.worldwide : terms.territory.countries?.join(", ")],
     [s.termDaysLabel, terms.term_days ?? messages[locale].notAvailable],
     [s.exclusivityHoursLabel, terms.exclusivity_hours ?? messages[locale].notAvailable],
-    [t.deliverables, terms.deliverables.map(d => t.deliverableNames[d]).join(list)],
+    [t.deliverables, delivered(terms.deliverables).map(d => t.deliverableNames[d]).join(list)],
     [t.prohibitions, terms.prohibitions.map(p => t.prohibitionNames[p]).join(list) || messages[locale].notAvailable],
     [t.attribution, localized(terms.attribution, locale)],
   ].map(([label, value]) => <div key={String(label)}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></details>;

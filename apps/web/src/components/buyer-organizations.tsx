@@ -250,8 +250,8 @@ function Members({ locale, id, seats, primary }: { locale: Locale; id: string; s
   return <section className="card" aria-labelledby="members-title"><h2 id="members-title">{t.members}</h2>
     {issued && <OneTimeToken locale={locale} token={issued.token} email={issued.email} onDone={() => setIssued(null)} />}
     <p className="muted">{t.seatsUsed.replace("{active}", String(active)).replace("{seats}", String(seats))}</p>
-    <ActionStatus status={mutation.status} locale={locale} />
-    {mutation.status === 409 && <p className="notice error">{t.memberConflict}</p>}
+    <ActionStatus status={mutation.status} locale={locale} refusal={mutation.refusal} />
+    {mutation.status === 409 && !mutation.refusal && <p className="notice error">{t.memberConflict}</p>}
     {error ? <p role="alert">{m.error}</p> : !items ? <p role="status">{m.loading}</p> : !items.length ? <p className="muted">{t.noMembers}</p>
       : <div className="table-panel"><table className="admin-table members-table" aria-label={t.members}><thead><tr><th scope="col">{t.email}</th><th scope="col">{t.role}</th><th scope="col">{t.status}</th><th scope="col">{t.totp}</th><th scope="col"><span className="visually-hidden">{m.earnings.actions}</span></th></tr></thead>
         <tbody>{items.map(member => <tr key={member.user_id} data-testid="member-row"><td className="cell-primary"><strong><bdi dir="ltr">{member.email}</bdi></strong></td>
