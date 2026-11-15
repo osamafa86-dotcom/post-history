@@ -10,6 +10,7 @@ import { shortTextMax, type Template } from "@/lib/license-policy";
 import type { Refusal } from "@/lib/refusal-policy";
 import { emptyListing, inputOf, listingInput, listingLimits, listingReaders, listingStates, listingWriters, type Listing, type ListingInput } from "@/lib/listing-policy";
 import { sensitivityState } from "@/lib/sensitivity";
+import { fill } from "@/lib/admin-text";
 import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
 import { Icon } from "./icon";
@@ -103,7 +104,7 @@ function ListingForm({ locale, draft, templates, set, admin, sellable, busy, inv
       {!templates.length && <p className="muted">{t.noTemplates}</p>}
       {templates.map(template => { const offer = offered(template.id), commercial = template.type === "commercial"; return <div key={template.id} className="offer-row" data-testid="listing-offer">
         <label className="check"><input type="checkbox" checked={!!offer} disabled={!offer && (draft.offers.length >= listingLimits.offers || commercial && !draft.commercial_allowed)} onChange={() => toggle(template)} />{localized(template.name, locale)} <small className="muted">{m.store.licenseTypes[template.type]} · <bdi dir="ltr">{formatMoney(template.base_price, locale)}</bdi></small></label>
-        {offer && <label>{t.priceOverride}<input type="number" min={0} step="0.01" dir="ltr" value={offer.price_override ? offer.price_override.amount_minor / 100 : ""} placeholder={String(template.base_price.amount_minor / 100)} onChange={e => override(template.id, e.target.value, template.base_price.currency)} /></label>}
+        {offer && <label>{t.priceOverride}<input type="number" min={0} step="0.01" dir="ltr" aria-label={fill(t.priceOverrideFor, { name: localized(template.name, locale) })} value={offer.price_override ? offer.price_override.amount_minor / 100 : ""} placeholder={String(template.base_price.amount_minor / 100)} onChange={e => override(template.id, e.target.value, template.base_price.currency)} /></label>}
       </div>; })}</fieldset>
     <label className="check"><input type="checkbox" checked={draft.commercial_allowed ?? false} disabled={!admin} onChange={e => set("commercial_allowed", e.target.checked)} />{t.commercialAllowed}</label>
     {!admin && <small className="muted">{t.commercialAdmin}</small>}

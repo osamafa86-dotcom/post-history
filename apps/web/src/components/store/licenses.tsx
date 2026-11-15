@@ -15,6 +15,7 @@ import { Icon } from "../icon";
 import { licenseTone } from "./license-verify";
 import { numberLocale } from "@/lib/format";
 import { isBuyer } from "@/lib/buyer-policy";
+import { orderReaders } from "@/lib/order-policy";
 import { licenseStatuses } from "@/lib/issued-licenses";
 import { organizationLabel, StaffFilters, useOrganizationNames } from "./staff-filters";
 
@@ -58,7 +59,8 @@ export function LicensesPage({ locale }: { locale: Locale }) {
     })().catch(() => { /* بلا قائمة لا روابط فواتير، والأرقام ظاهرة */ });
     return () => controller.abort();
   }, [allowed, member, attempt]);
-  const opens = (orderId: string) => !member || !!ownOrders?.has(orderId);
+  // رابط الفاتورة لمن يقرأ الطلب وحده: مسؤول الحقوق يرى رقم الطلب نصًا، والعضو يفتح طلباته هو.
+  const opens = (orderId: string) => hasRole(me, ...orderReaders) && (!member || !!ownOrders?.has(orderId));
   async function download(id: string) {
     let url: string | undefined, left: number | undefined;
     setWorking(id);

@@ -562,6 +562,19 @@ const server = createServer(async (req, res) => {
       const next = { ...current, status: "rejected", rejection_reason: String(body.reason_code), row: current.row + 1, updated_at: new Date().toISOString() }; organizations.set(current.id, next);
       res.setHeader("ETag", `"${next.row}"`); return commit({ ...Object.fromEntries(Object.entries(next).filter(([key]) => key !== "row")), active_members: members.get(current.id)!.filter(m => m.status === "active").length }, 200);
     }
+    // إعادة إصدار رمز دعوة لم يكتمل قبولها (POST) وإلغاؤها (DELETE): للمدعو وحده، والإلغاء يخرجه من القائمة والمقاعد.
+    const invitation = /^\/v1\/buyer-organizations\/([^/]+)\/members\/([^/]+)\/invitation$/.exec(path);
+    if (invitation && (req.method === "POST" || req.method === "DELETE")) {
+      if (!has("system_admin", "buyer_admin")) return send({ code: "forbidden_role" }, 403);
+      const current = organizations.get(invitation[1]); if (!current || (user.organization_id && user.organization_id !== invitation[1])) return send({}, 404);
+      const list = members.get(invitation[1])!, target = list.find(m => m.user_id === invitation[2]); if (!target) return send({}, 404);
+      if (target.status !== "invited") return send({ code: "invalid_transition", message: "never-display-canary" }, 409);
+      if (req.method === "DELETE") {
+        if (current.status === "active" && !list.some(m => m !== target && m.role === "buyer_admin" && m.status !== "suspended")) return send({ code: "last_buyer_admin" }, 409);
+        list.splice(list.indexOf(target), 1); return commit(null);
+      }
+      return commit({ ...target, invite_token: "synthetic-invite-token-reissued-00000002", invite_token_expires_at: new Date(Date.now() + 86400000).toISOString() }, 200);
+    }
     const orgWrite = /^\/v1\/buyer-organizations(?:\/([^/]+)(\/members)?(?:\/([^/]+))?)?$/.exec(path);
     if (orgWrite) {
       const [, id, isMembers, userId] = orgWrite, mine = (orgId: string) => !user.organization_id || user.organization_id === orgId;
@@ -582,6 +595,9 @@ const server = createServer(async (req, res) => {
       if (!has("system_admin", "buyer_admin")) return send({}, 403);
       const list = members.get(id)!, active = list.filter(m => m.status !== "suspended").length;
       if (!userId) {
+        // بريد لم يكتمل قبول دعوته: إعادة إصدار بالعضو نفسه لا تعارض
+        const pending = list.find(m => String(m.email).toLowerCase() === String(body.email).toLowerCase() && m.status === "invited");
+        if (pending) { pending.role = String(body.role); return commit({ ...pending, invite_token: "synthetic-invite-token-reissued-00000002", invite_token_expires_at: new Date(Date.now() + 86400000).toISOString() }, 201); }
         if (list.some(m => m.email === body.email)) return send({ code: "conflict" }, 409);
         if (active >= current.seats) return send({ code: "seats_exhausted" }, 409);
         const added = { user_id: randomUUID(), email: String(body.email), role: String(body.role), status: "invited", totp_enabled: false, created_at: new Date().toISOString() }; list.push(added);
@@ -729,7 +745,7 @@ const server = createServer(async (req, res) => {
   const orgRead = /^\/v1\/buyer-organizations(?:\/([^/]+)(\/members)?)?$/.exec(url.pathname);
   if (orgRead) {
     const [, id, isMembers] = orgRead, roles = (...names: string[]) => user.roles.some(role => names.includes(role.name));
-    const view = (o: Record<string, unknown>) => ({ ...Object.fromEntries(Object.entries(o).filter(([key]) => key !== "row")), active_members: members.get(String(o.id))!.filter(m => m.status === "active").length });
+    const view = (o: Record<string, unknown>) => ({ ...Object.fromEntries(Object.entries(o).filter(([key]) => key !== "row")), active_members: members.get(String(o.id))!.filter(m => m.status === "active").length, invited_members: members.get(String(o.id))!.filter(m => m.status === "invited").length });
     if (!id) { if (!roles("system_admin", "finance")) return send({}, 403); const status = url.searchParams.get("status"); return send({ items: [...organizations.values()].filter(o => !status || o.status === status).map(view), next_cursor: null }); }
     const found = organizations.get(id); if (!found || (user.organization_id && user.organization_id !== id)) return send({}, 404);
     if (isMembers) { if (!roles("system_admin", "buyer_admin")) return send({}, 403); return send({ items: members.get(id)!.map(m => ({ ...m, password_hash: "never-display-canary" })) }); }
