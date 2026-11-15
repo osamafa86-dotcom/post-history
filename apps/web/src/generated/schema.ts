@@ -368,7 +368,35 @@ export interface paths {
          */
         get: operations["listUsers"];
         put?: never;
-        post?: never;
+        /**
+         * إنشاء حساب طاقم أو مراسل (مدير النظام)
+         * @description ينشئ مدير النظام حسابًا بدور واحد من الطاقم أو المراسلين: البريد، واسم العمل (للطاقم وحده، ADR 0035)، والدور ونطاقه (للمشرف: كل المكاتب، أو مكتب، أو محافظة)، ومكتب المراسل. **لا ينشئ مدير نظام ولا يمنح دوره** (`422 validation_failed`): ذاك بإجراء الشخصين من سطر الأوامر (ADR 0030). ولا ينشئ حساب مشترٍ (تلك بدعوة مؤسسته). الحساب يولد **بلا كلمة سر** تصلح للدخول وفي «إعادة تعيين إلزامية»: يفعّله صاحبه برابط إعادة التعيين الذي يصدره مدير النظام بالنقطة القائمة (`POST /users/{id}/password-reset-links`، مرة واحدة، مع ربط المصادقة الثنائية الإلزامي). الرد لا يحمل البريد ولا أي رمز. البريد المستعمل `409 email_taken`. المكتب أو النطاق غير الموجود `422 validation_failed`. يُسجَّل في التدقيق (`user.created`: `target_user_id` و`role` و`scope_kind` و`scope_id` و`reason_code`، بلا البريد). حد معدل لكل مدير (`429 rate_limited`).
+         */
+        post: operations["createUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/offices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * المكاتب لمدير النظام
+         * @description كل المكاتب مرتبة باسمها العربي: المعرّف والاسمان والمحافظة. تُختار منها نطاقات المشرفين ومكتب المراسل في إدارة الحسابات بدل كتابة معرّف. لا عناوين ولا مواقع ولا أسماء أشخاص.
+         */
+        get: operations["listOffices"];
+        put?: never;
+        /**
+         * إنشاء مكتب (مدير النظام)
+         * @description مكتب باسمين (عربي وإنجليزي) ومحافظة. الاسم العربي أو الإنجليزي المستعمل في مكتب آخر `409 office_exists`. يُسجَّل في التدقيق (`office.created`: `scope_kind: office` و`scope_id` معرّف المكتب، بلا الاسم). حد معدل لكل مدير (`429 rate_limited`). لا تعديل ولا حذف في هذه الدورة.
+         */
+        post: operations["createOffice"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4998,6 +5026,46 @@ export interface components {
          * @enum {string}
          */
         StaffUserStatus: "active" | "suspended" | "recovery";
+        Office: {
+            /** Format: uuid */
+            id: string;
+            name_ar: string;
+            name_en: string;
+            governorate: string;
+        };
+        OfficeInput: {
+            /** @description بلا مسافة في طرفيه ولا محارف تحكم أو اتجاه */
+            name_ar: string;
+            name_en: string;
+            /** @description رمز المحافظة كما في نطاقات المشرفين */
+            governorate: string;
+        };
+        /** @description حساب جديد بدور واحد. `scope_kind`/`scope_id` للمشرف وحده (الافتراضي `all`)؛ `office_id` إلزامي للمراسل واختياري لغيره؛ `work_name` للطاقم وحده، لا للمراسل. مخالفة ذلك `422 validation_failed`. */
+        StaffAccountInput: {
+            /** Format: email */
+            email: string;
+            /**
+             * @description كل أدوار الطاقم والمراسل، إلا مدير النظام (بإجراء الشخصين من سطر الأوامر) وأدوار المشترين
+             * @enum {string}
+             */
+            role: "editor_in_chief" | "supervisor" | "producer" | "finance" | "rights_officer" | "reporter";
+            work_name?: components["schemas"]["WorkName"] | null;
+            /**
+             * @default all
+             * @enum {string}
+             */
+            scope_kind: "all" | "office" | "governorate";
+            /**
+             * @description معرّف المكتب أو رمز المحافظة؛ فارغ مع `all`
+             * @default
+             */
+            scope_id: string;
+            /**
+             * Format: uuid
+             * @description مكتب الحساب؛ إلزامي للمراسل
+             */
+            office_id?: string | null;
+        };
         StaffUser: {
             /** Format: uuid */
             id: string;
@@ -6100,6 +6168,96 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    createUser: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffAccountInput"];
+            };
+        };
+        responses: {
+            /** @description الحساب الجديد كما يظهر في قائمة الحسابات */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffUser"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listOffices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description المكاتب كلها */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Office"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createOffice: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OfficeInput"];
+            };
+        };
+        responses: {
+            /** @description المكتب الجديد */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Office"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     setUserStatus: {

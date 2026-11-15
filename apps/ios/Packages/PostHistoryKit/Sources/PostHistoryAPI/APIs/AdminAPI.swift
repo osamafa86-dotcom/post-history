@@ -10,6 +10,92 @@ import Foundation
 open class AdminAPI {
 
     /**
+     إنشاء مكتب (مدير النظام)
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter officeInput: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: Office
+     */
+    open class func createOffice(idempotencyKey: String, officeInput: OfficeInput, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> Office {
+        return try await createOfficeWithRequestBuilder(idempotencyKey: idempotencyKey, officeInput: officeInput, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     إنشاء مكتب (مدير النظام)
+     - POST /offices
+     - مكتب باسمين (عربي وإنجليزي) ومحافظة. الاسم العربي أو الإنجليزي المستعمل في مكتب آخر `409 office_exists`. يُسجَّل في التدقيق (`office.created`: `scope_kind: office` و`scope_id` معرّف المكتب، بلا الاسم). حد معدل لكل مدير (`429 rate_limited`). لا تعديل ولا حذف في هذه الدورة.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter officeInput: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<Office> 
+     */
+    open class func createOfficeWithRequestBuilder(idempotencyKey: String, officeInput: OfficeInput, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<Office> {
+        let localVariablePath = "/offices"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: officeInput, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<Office>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     إنشاء حساب طاقم أو مراسل (مدير النظام)
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter staffAccountInput: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: StaffUser
+     */
+    open class func createUser(idempotencyKey: String, staffAccountInput: StaffAccountInput, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> StaffUser {
+        return try await createUserWithRequestBuilder(idempotencyKey: idempotencyKey, staffAccountInput: staffAccountInput, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     إنشاء حساب طاقم أو مراسل (مدير النظام)
+     - POST /users
+     - ينشئ مدير النظام حسابًا بدور واحد من الطاقم أو المراسلين: البريد، واسم العمل (للطاقم وحده، ADR 0035)، والدور ونطاقه (للمشرف: كل المكاتب، أو مكتب، أو محافظة)، ومكتب المراسل. **لا ينشئ مدير نظام ولا يمنح دوره** (`422 validation_failed`): ذاك بإجراء الشخصين من سطر الأوامر (ADR 0030). ولا ينشئ حساب مشترٍ (تلك بدعوة مؤسسته). الحساب يولد **بلا كلمة سر** تصلح للدخول وفي «إعادة تعيين إلزامية»: يفعّله صاحبه برابط إعادة التعيين الذي يصدره مدير النظام بالنقطة القائمة (`POST /users/{id}/password-reset-links`، مرة واحدة، مع ربط المصادقة الثنائية الإلزامي). الرد لا يحمل البريد ولا أي رمز. البريد المستعمل `409 email_taken`. المكتب أو النطاق غير الموجود `422 validation_failed`. يُسجَّل في التدقيق (`user.created`: `target_user_id` و`role` و`scope_kind` و`scope_id` و`reason_code`، بلا البريد). حد معدل لكل مدير (`429 rate_limited`).
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter staffAccountInput: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<StaffUser> 
+     */
+    open class func createUserWithRequestBuilder(idempotencyKey: String, staffAccountInput: StaffAccountInput, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<StaffUser> {
+        let localVariablePath = "/users"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: staffAccountInput, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<StaffUser>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      هوية المنصة (A6، ADR 0099)
      
      - parameter apiConfiguration: The configuration for the http request.
@@ -174,6 +260,44 @@ open class AdminAPI {
         let localVariableRequestBuilder: RequestBuilder<PasswordResetLink>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     المكاتب لمدير النظام
+     
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: ListOffices200Response
+     */
+    open class func listOffices(apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> ListOffices200Response {
+        return try await listOfficesWithRequestBuilder(apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     المكاتب لمدير النظام
+     - GET /offices
+     - كل المكاتب مرتبة باسمها العربي: المعرّف والاسمان والمحافظة. تُختار منها نطاقات المشرفين ومكتب المراسل في إدارة الحسابات بدل كتابة معرّف. لا عناوين ولا مواقع ولا أسماء أشخاص.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<ListOffices200Response> 
+     */
+    open class func listOfficesWithRequestBuilder(apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<ListOffices200Response> {
+        let localVariablePath = "/offices"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<ListOffices200Response>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }
 
     /**
