@@ -52,9 +52,9 @@ test("revocation clears the screen and shows the sign-in reason", async ({ page,
 });
 test("all-device logout requires explicit confirmation and clears the HttpOnly session", async ({ page }) => {
   await login(page); const cookies = await page.context().cookies(); expect(cookies.find(c => c.name === "ph-session")?.httpOnly).toBe(true);
-  await page.getByRole("button", { name: new RegExp(`^${ar.shell.account}`) }).click(); await page.getByRole("button", { name: ar.logoutAll, exact: true }).click(); await expect(page.getByRole("dialog")).toContainText(ar.logoutAllWarning);
+  await page.getByRole("button", { name: new RegExp(ar.shell.account) }).click(); await page.getByRole("button", { name: ar.logoutAll, exact: true }).click(); await expect(page.getByRole("dialog")).toContainText(ar.logoutAllWarning);
   await page.getByRole("button", { name: ar.cancel, exact: true }).click(); await expect(page.getByTestId("material-row")).toHaveCount(50);
-  await page.getByRole("button", { name: new RegExp(`^${ar.shell.account}`) }).click(); await page.getByRole("button", { name: ar.logoutAll, exact: true }).click();
+  await page.getByRole("button", { name: new RegExp(ar.shell.account) }).click(); await page.getByRole("button", { name: ar.logoutAll, exact: true }).click();
   const logout = page.waitForResponse(r => r.url().endsWith("/api/bff/auth/logout"));
   await page.getByRole("button", { name: ar.confirm, exact: true }).click();
   expect((await logout).status()).toBe(200); await expect(page).toHaveURL(/reason=signed-out/);
@@ -66,7 +66,7 @@ test("small viewport keeps navigation usable and the table scrolls within its pa
 });
 test("signing out clears another open tab and history cannot restore its private rows", async ({ page, context }) => {
   await login(page); const other = await context.newPage(); await other.goto("/ar/inbox"); await expect(other.getByTestId("material-row")).toHaveCount(50);
-  await page.getByRole("button", { name: new RegExp(`^${ar.shell.account}`) }).click(); await page.getByRole("button", { name: ar.logout, exact: true }).click(); await expect(page).toHaveURL(/reason=signed-out/);
+  await page.getByRole("button", { name: new RegExp(ar.shell.account) }).click(); await page.getByRole("button", { name: ar.logout, exact: true }).click(); await expect(page).toHaveURL(/reason=signed-out/);
   await expect(other).toHaveURL(/\/ar\/login/); await expect(other.getByTestId("material-row")).toHaveCount(0);
   await other.goBack(); await expect(other.getByTestId("material-row")).toHaveCount(0);
 });
