@@ -6,11 +6,12 @@ import { longDate, messages, shortTime, type Locale } from "@/lib/i18n";
 import { formatAmount, localized, orderLabel } from "@/lib/store-format";
 import type { Order } from "@/lib/order-policy";
 import type { Organization } from "@/lib/buyer-policy";
+import type { components } from "@/generated/schema";
 import { EmptyState } from "../empty-state";
 import { Icon } from "../icon";
 import { ScrollRegion } from "../scroll-region";
 
-type Loaded = { order: Order; organization: Organization | null; licenses: Record<string, string> };
+type Loaded = { order: Order; organization: Organization | null; licenses: Record<string, string>; refunds: components["schemas"]["Refund"][] };
 
 /**
  * الفاتورة (S7): ورقة فاتحة (وضع `light` صريح) داخل المتجر الداكن، فعلها «طباعة» من المتصفح. البيانات من `Order` (البنود وسعر كلٍّ منها
@@ -29,7 +30,9 @@ export function InvoicePage({ locale, id }: { locale: Locale; id: string }) {
         // المؤسسة والتراخيص تكمل الورقة؛ غيابها لا يمنع عرض الفاتورة (سطر «—» مكانها).
         const organization = await api.GET("/buyer-organizations/{org_id}", { params: { path: { org_id: order.organization_id } }, signal }).then(dataOrThrow).catch(() => null);
         const numbers = await Promise.all(order.items.filter(i => i.license_id).map(i => api.GET("/licenses/{license_id}", { params: { path: { license_id: i.license_id! } }, signal }).then(dataOrThrow).then(l => [i.id, l.license_number] as const).catch(() => null)));
-        if (!signal.aborted) { setLoaded({ order, organization, licenses: Object.fromEntries(numbers.filter((n): n is readonly [string, string] => !!n)) }); setStatus(0); }
+        // الاستردادات الناجحة تُذكر في الفاتورة بصافيها (لمن يقرؤها: المالية ومدير المؤسسة)؛ تعذّرها لا يمنع الورقة
+        const refunds = order.status === "paid" || order.status === "refunded" ? await api.GET("/orders/{order_id}/refunds", { params: { path: { order_id: id } }, signal }).then(dataOrThrow).then(data => data.items.filter(r => r.status === "succeeded")).catch(() => []) : [];
+        if (!signal.aborted) { setLoaded({ order, organization, licenses: Object.fromEntries(numbers.filter((n): n is readonly [string, string] => !!n)), refunds }); setStatus(0); }
       } catch (e) { if (!signal.aborted) setStatus(e instanceof RequestError ? e.status : 503); }
     }
     void load(); return () => controller.abort();
@@ -38,7 +41,8 @@ export function InvoicePage({ locale, id }: { locale: Locale; id: string }) {
   if (status) return <>{crumbs()}{status === 404 || status === 403 ? <EmptyState icon="orders" role="alert" title={v.notFoundTitle}><p>{v.notFoundBody}</p></EmptyState>
     : <EmptyState icon="offline" role="alert" title={m.error} actions={<button className="secondary" onClick={() => setAttempt(n => n + 1)}>{m.retry}</button>} />}</>;
   if (!loaded) return <>{crumbs()}<p className="center-state" role="status">{m.loading}</p></>;
-  const { order, organization, licenses } = loaded, label = orderLabel(order), currency = order.total.currency;
+  const { order, organization, licenses, refunds } = loaded, label = orderLabel(order), currency = order.total.currency;
+  const refundedItems = new Set(refunds.flatMap(r => r.order_item_ids)), refundedTotal = refunds.reduce((sum, r) => sum + r.amount.amount_minor, 0);
   if (!order.invoice_number || !order.paid_at) return <>{crumbs(v.breadcrumbCurrent.replace("{id}", label))}
     <EmptyState icon="clock" title={v.notPaidTitle} actions={<Link prefetch={false} className="button secondary" href={`/${locale}/store/orders/${order.id}`}>{m.store.cartPage.openOrder}</Link>}><p>{v.notPaidBody}</p></EmptyState></>;
   // الأرقام والمعرّفات معزولة الاتجاه: رقم الترخيص بالخط الأحادي (ADR 0090)، وغيره بأرقام Rubik.
@@ -65,10 +69,12 @@ export function InvoicePage({ locale, id }: { locale: Locale; id: string }) {
         <tbody>{order.items.map(item => <tr key={item.id} data-testid="invoice-line">
           <td>{localized(item.title, locale)}</td>
           <td>{[...new Set([localized(item.license_name, locale), m.store.licenseTypes[item.license_type]])].join(list)}</td>
-          <td>{licenses[item.id] ? mono(licenses[item.id]) : <span className="muted">{v.licencePending}</span>}</td>
+          <td>{licenses[item.id] ? mono(licenses[item.id]) : <span className="muted">{v.licencePending}</span>}{refundedItems.has(item.id) && <small className="muted" data-testid="invoice-line-refunded"> {v.lineRefunded}</small>}</td>
           <td className="ref" dir="ltr">{formatAmount(item.price, locale)}</td>
         </tr>)}</tbody>
-        <tfoot><tr><th scope="row" colSpan={3}>{v.total.replace("{currency}", currency)}</th><td className="ref" dir="ltr" data-testid="invoice-total">{formatAmount(order.total, locale)}</td></tr></tfoot>
+        <tfoot><tr><th scope="row" colSpan={3}>{v.total.replace("{currency}", currency)}</th><td className="ref" dir="ltr" data-testid="invoice-total">{formatAmount(order.total, locale)}</td></tr>
+          {refundedTotal > 0 && <><tr data-testid="invoice-refunded"><th scope="row" colSpan={3}>{v.refundedTotal.replace("{currency}", currency)}</th><td className="ref" dir="ltr">{formatAmount({ amount_minor: -refundedTotal, currency }, locale)}</td></tr>
+            <tr data-testid="invoice-net"><th scope="row" colSpan={3}>{v.netTotal.replace("{currency}", currency)}</th><td className="ref" dir="ltr">{formatAmount({ amount_minor: order.total.amount_minor - refundedTotal, currency }, locale)}</td></tr></>}</tfoot>
       </table></ScrollRegion>
       <footer className="invoice-notes"><p>{v.paymentNote}</p><p>{v.filesNote}</p></footer>
     </article>

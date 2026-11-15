@@ -239,8 +239,21 @@ label.license-option.blocked { cursor: not-allowed; }
 .listing-conditions li { display: flex; align-items: center; gap: var(--v2-space-2); font-size: var(--v2-font-label-size); }
 .listing-conditions li[data-met="true"] { color: var(--v2-c-state-ok); }
 .listing-conditions li[data-met="false"] { color: var(--v2-c-state-danger); }
+/* «المال»: خمس بطاقات بعد الاسترداد، وكلها على الهاتف أيضًا (صفّان). */
+.kpis.money-kpis { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.money-kpis .kpi small { flex-basis: 100%; }
+/* كشف «أرباحي»: بنود البيعة تحت نوع الحركة، سطر لكل بند. */
+.entry-sale { list-style: none; margin: var(--v2-space-1) 0 0; padding: 0; display: grid; gap: var(--v2-space-1); font-size: var(--v2-font-label-size); }
+.entry-sale strong { overflow-wrap: anywhere; }
 @media print {
   .app-shell, .main-content { background: var(--v2-c-bg-raised); }
   .main-content { padding: 0; }
   .invoice-paper { max-inline-size: none; margin: 0; padding: 0; border-radius: 0; }
+  /* الفاتورة على A4 بهامشها: لا تتجاوز عرض الصفحة، والجدول بلا تمرير فلا يُقصّ طرفه */
+  .invoice-paper, .invoice-paper * { min-inline-size: 0; }
+  .invoice-paper .invoice-table { overflow: visible; }
+  .invoice-paper table { inline-size: 100%; table-layout: fixed; }
+  .invoice-paper td, .invoice-paper th { overflow-wrap: anywhere; }
+  .invoice-sandbox { box-sizing: border-box; max-inline-size: 100%; }
 }
+@page { size: A4; margin: 14mm; }

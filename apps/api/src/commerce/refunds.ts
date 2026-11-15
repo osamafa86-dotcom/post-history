@@ -280,10 +280,13 @@ async function recomputedShares(tx: Tx, orderId: string, details: unknown, credi
   return same ? computed : null;
 }
 
-async function toDtos(executor: Executor, rows: RefundRow[]): Promise<Refund[]> {
+/** الاستردادات بصيغة العقد، ومزوّد كلٍّ منها (مزوّد دفع طلبه). */
+export async function toDtos(executor: Executor, rows: RefundRow[]): Promise<Refund[]> {
   if (rows.length === 0) return [];
   const items = await executor.select().from(refundItems).where(inArray(refundItems.refundId, rows.map((r) => r.id)));
+  const providers = await executor.select({ id: orders.id, provider: orders.provider }).from(orders).where(inArray(orders.id, [...new Set(rows.map((r) => r.orderId))]));
   return rows.map((r) => ({
+    ...((p) => (p === 'sandbox' || p === 'stripe' ? { provider: p } : {}))(providers.find((o) => o.id === r.orderId)?.provider),
     id: r.id,
     order_id: r.orderId,
     order_item_ids: items.filter((i) => i.refundId === r.id).map((i) => i.orderItemId).sort(),

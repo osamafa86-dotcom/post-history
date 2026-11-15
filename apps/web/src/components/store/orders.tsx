@@ -16,6 +16,9 @@ import { Icon } from "../icon";
 import { CartSummary } from "./cart-summary";
 import { useCart } from "./cart";
 import { RefundsPanel } from "./refunds";
+import { organizationLabel, StaffFilters, useOrganizationNames } from "./staff-filters";
+import { isBuyer } from "@/lib/buyer-policy";
+import { orderStatuses } from "@/lib/order-policy";
 
 type Session = { checkout_url: string; provider: string };
 
@@ -111,22 +114,26 @@ function OrderStatus({ status, locale, testId }: { status: Order["status"]; loca
 export function OrdersPage({ locale }: { locale: Locale }) {
   const m = messages[locale], o = m.orders, me = useUser();
   const [items, setItems] = useState<Order[] | null>(null), [error, setError] = useState(false), [attempt, setAttempt] = useState(0), [now] = useState(() => Date.now());
-  const allowed = hasRole(me, ...orderReaders);
+  // الطاقم يرى طلبات المؤسسات كلها: عمود المؤسسة ومرشّحاها (T3-17)؛ والمشتري طلبات مؤسسته وحدها
+  const allowed = hasRole(me, ...orderReaders), staff = allowed && !isBuyer(me), names = useOrganizationNames(staff);
+  const [filter, setFilter] = useState<{ organization: string; status: Order["status"] | "" }>({ organization: "", status: "" });
   useEffect(() => {
     if (!allowed) return;
     const controller = new AbortController();
-    void browserApi().GET("/orders", { signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) { setItems(data.items); setError(false); } }).catch(() => { if (!controller.signal.aborted) setError(true); });
+    void browserApi().GET("/orders", { params: { query: { ...(filter.organization ? { organization_id: filter.organization } : {}), ...(filter.status ? { status: filter.status } : {}) } }, signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) { setItems(data.items); setError(false); } }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
-  }, [allowed, attempt]);
+  }, [allowed, attempt, filter]);
   if (!allowed) return <NoAccess locale={locale} me={me} title={o.title} denied={o.denied} />;
   return <>
-    <div className="page-heading"><div><h1>{m.store.nav.orders}</h1><p className="muted">{o.lead}</p></div></div>
+    <div className="page-heading"><div><h1>{m.store.nav.orders}</h1><p className="muted">{staff ? o.staffLead : o.lead}</p></div></div>
+    {staff && <StaffFilters locale={locale} names={names} organization={filter.organization} status={filter.status} statuses={orderStatuses} statusLabel={s => o.statuses[s]} onChange={next => { setItems(null); setFilter(next); }} />}
     {error ? <EmptyState icon="offline" role="alert" title={m.error} actions={<button className="secondary" onClick={() => setAttempt(n => n + 1)}>{m.retry}</button>} />
       : !items ? <p className="center-state" role="status">{m.loading}</p>
       : !items.length ? <EmptyState icon="orders" title={o.emptyTitle} actions={<Link prefetch={false} className="button store" href={`/${locale}/store`}>{m.store.cartPage.browse}</Link>}><p>{o.emptyBody}</p></EmptyState>
-      : <div className="store-table"><table><thead><tr>{[o.colOrder, o.created, o.items, o.total, o.status, o.invoice].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+      : <div className="store-table"><table><thead><tr>{[o.colOrder, ...(staff ? [m.staffFilters.organization] : []), o.created, o.items, o.total, o.status, o.invoice].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
         <tbody>{items.map(order => <tr key={order.id} data-testid="order-row">
           <td data-label={o.colOrder}><Link prefetch={false} className="ref" dir="ltr" href={`/${locale}/store/orders/${order.id}`}>{orderLabel(order)}</Link></td>
+          {staff && <td data-label={m.staffFilters.organization} data-testid="order-organization"><bdi>{organizationLabel(names, order.organization_id)}</bdi></td>}
           <td data-label={o.created}>{longDate(order.created_at, locale)}</td>
           <td data-label={o.items}>{order.items.map(i => localized(i.title, locale)).join(m.shell.listSeparator)}</td>
           <td data-label={o.total} dir="ltr" className="ref">{formatMoney(order.total, locale)}</td>
@@ -184,8 +191,8 @@ export function OrderPage({ locale, id, returned, failed = false }: { locale: Lo
       {order.invoice_number && order.status !== "paid" && <Link prefetch={false} className="button secondary" href={`/${locale}/store/orders/${order.id}/invoice`}>{o.invoice}</Link>}</div>
     {/* بعد الدفع: بطاقة تقول ما تمّ وأين الملف، بفعل أساسي واحد («تراخيصي») والفاتورة ثانوية. */}
     {order.status === "paid" && <section className="card order-paid" role="status" data-testid="order-paid" aria-labelledby="order-paid-title"><span className="empty-icon"><Icon name="check" size={24} /></span>
-      <div><h2 id="order-paid-title">{o.paidTitle}</h2><p>{o.paidHelp}</p></div>
-      <div className="actions"><Link prefetch={false} className="button store" href={`/${locale}/store/licenses`}>{m.store.nav.licenses}</Link>{order.invoice_number && <Link prefetch={false} className="button secondary" href={`/${locale}/store/orders/${order.id}/invoice`}>{o.invoice}</Link>}</div></section>}
+      <div><h2 id="order-paid-title">{o.paidTitle}</h2><p>{buyer ? o.paidHelp : o.paidHelpStaff}</p></div>
+      <div className="actions"><Link prefetch={false} className="button store" href={`/${locale}/store/licenses`}>{buyer ? m.store.nav.licenses : m.licenses.issued}</Link>{order.invoice_number && <Link prefetch={false} className="button secondary" href={`/${locale}/store/orders/${order.id}/invoice`}>{o.invoice}</Link>}</div></section>}
     {open && <p className={`badge ${late ? "bad" : "attention"} hold-timer`} data-testid="hold-timer" aria-live="off">{(exclusive ? o.holdEnds : o.payWithin).split("{time}")[0]}<span className="mono" dir="ltr">{clock(new Date(now - left).toISOString(), now)}</span></p>}
     {pending && late && <p className="visually-hidden" role="status">{expired ? o.holdExpired : o.holdSoon}</p>}
     <div className="checkout-layout">

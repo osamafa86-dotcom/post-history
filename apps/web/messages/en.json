@@ -910,7 +910,10 @@
       "notFoundTitle": "We couldn't find this invoice",
       "notFoundBody": "Invoices are for whoever placed the order, the organization's admin and finance. If a colleague placed it, ask your organization's admin.",
       "licencePending": "Issued after confirmation",
-      "linesLabel": "Invoice lines"
+      "linesLabel": "Invoice lines",
+      "lineRefunded": "Refunded",
+      "refundedTotal": "Refunded ({currency})",
+      "netTotal": "Net after refunds ({currency})"
     },
     "invite": {
       "badge": "Store invitation",
@@ -1664,6 +1667,7 @@
     "deliveryContents": "Delivery contents",
     "deliverySize": "Package size: {size} MB",
     "mine": "My licenses",
+    "issued": "Issued licenses",
     "colMaterial": "Footage",
     "colOrder": "Order",
     "colLicence": "License",
@@ -1726,6 +1730,8 @@
     "title": "My orders",
     "nav": "Cart and orders",
     "lead": "Your organization's orders and their status. Licenses are issued once payment is confirmed.",
+    "staffLead": "Orders of the buyer organizations and their status. A license is issued once the payment is confirmed.",
+    "paidHelpStaff": "The order's licenses are issued; find them in Issued licenses.",
     "cartLead": "One line per material, in one currency. The price is fixed when the order is created.",
     "denied": "This page is for buyers, finance and the system admin.",
     "empty": "No orders yet.",
@@ -1814,7 +1820,9 @@
       "exclusivity_lost": "Exclusivity lost",
       "other": "Other"
     },
-    "historyLabel": "Refund history"
+    "historyLabel": "Refund history",
+    "sandboxConfirm": "Confirm refund (sandbox)",
+    "sandboxHelp": "Sandbox payments: the sandbox provider does not confirm a refund on its own. \"Confirm refund (sandbox)\" sends its signed notice as the provider would."
   },
   "privacy": {
     "title": "Privacy policy",
@@ -2021,8 +2029,12 @@
     "noBalanceBody": "Your share appears here after the first sale of a material you contributed to, computed from the ledger.",
     "errorTitle": "Your earnings couldn't be loaded",
     "errorBody": "The server didn't respond. Nothing changed in your balance; try again.",
-    "formula": "Your share = (sale price − gateway fees − taxes) × commission rate × your share among contributors, under the rule in force when the payment was confirmed.",
-    "actions": "Action",
+    "formula": "Your share = (sale price − gateway fees − taxes) × the contributors' share after the platform's share × your share among the contributors, under the rule in force when the payment was confirmed.",
+    "releasesOn": "Released on {date}",
+    "belowMinimum": "Requestable now is {max}, below the minimum of {min}; no payout request before it reaches it.",
+    "twoDecimals": "Write the amount with two decimals at most; we do not round it for you.",
+    "fromState": "from “{state}”",
+    "soldOn": "Sold on {date}",    "actions": "Action",
     "entriesFailed": "The entries could not be loaded"
   },
   "payouts": {
@@ -2053,7 +2065,8 @@
     "policyReadOnly": "Adding versions is for system administrators.",
     "newPolicy": "New policy version",
     "appendOnly": "Policies are never edited or deleted: saving adds a version with its effective date, and earlier requests keep their approval count.",
-    "invalid": "Complete the fields: two non-negative amounts, a reserve between 0 and 50%, and an effective date.",
+    "invalid": "Complete the fields: a minimum above zero, a non-negative dual-approval limit, a reserve between 0 and 50%, and an effective date.",
+    "minimumAboveDual": "The minimum is above the dual-approval limit, so every payout request will need two approvers.",
     "savePolicy": "Add version",
     "approveTitle": "Approve a payout of {amount} to {name}?",
     "rejectTitle": "Reject the payout request of {amount} from {name}?",
@@ -2876,6 +2889,11 @@
     "kpiGross": "Sales this month",
     "kpiNet": "Net after fees and taxes",
     "kpiShare": "Reporters' share",
+    "kpiNetAfter": "Net after refunds",
+    "kpiNetBefore": "before them {amount}",
+    "kpiRefunded": "Refunded to buyers",
+    "kpiBorneLine": "the platform bore {amount} of it",
+    "kpiBorne": "Borne by the platform from the refund reserve",
     "kpiReady": "Ready to pay out now",
     "formula": "Reporter share = (sale price − gateway fees − taxes) × commission rate{pct} × their share among contributors. The rule in force when payment is confirmed is frozen in the sale record.",
     "formulaPct": " ({pct})",
@@ -3039,6 +3057,10 @@
     "edit": "Edit the material's details",
     "editLead": "Title, place and type. The states do not change, and the file is not touched.",
     "save": "Save changes"
+  },
+  "staffFilters": {
+    "organization": "Organization",
+    "status": "Status"
   },
   "refusals": {
     "listing_conditions_unmet": "The item is not shown before these are met: {conditions}.",

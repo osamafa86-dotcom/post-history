@@ -31,9 +31,9 @@ import { isSensitive } from './listing-store';
 import { type Currency, money, type Money } from './money';
 import { type ItemShares, itemSharesToDetails, splitItem } from './sale-shares';
 import type { CheckoutLocale } from './sandbox-page';
-import { PAYMENT_PROVIDER, type PaymentProvider, type ProviderEvent, WebhookSignatureError } from './payment-provider';
+import { PAYMENT_PROVIDER, type PaymentProvider, type ProviderEvent, SandboxPaymentProvider, WebhookSignatureError } from './payment-provider';
 import { IgnoredWebhookEvent, LiveModeEvent } from './stripe-provider';
-import { applyRefundSucceeded } from './refunds';
+import { applyRefundSucceeded, toDtos as refundDtos } from './refunds';
 
 export type Order = components['schemas']['Order'];
 export type OrderCreate = components['schemas']['OrderCreate'];
@@ -213,6 +213,27 @@ export class OrdersService {
     // خارج المعاملة وبلا شرط على نجاحه: الإلغاء محفوظ، ودفعة تسبق الإبطال تُسترد من إشعارها (apply)
     if (session) await this.provider!.cancelCheckout(session).catch(() => undefined);
     return order;
+  }
+
+  /**
+   * تأكيد المالية لاسترداد معلّق مع المزوّد التجريبي وحده (قرار المنسّق 2026-11-15): الإشعار الموقّع نفسه بمرجعه ومبلغه من سجله، مطبَّقًا
+   * كأي إشعار. بلا المزوّد التجريبي أو لاسترداد طلب آخر 404، ولغير المعلّق 409. يُسجَّل في التدقيق. لا تأكيد آلي.
+   */
+  async confirmSandboxRefund(p: Principal, orderId: string, refundId: string): Promise<components['schemas']['Refund']> {
+    if (!(this.provider instanceof SandboxPaymentProvider) || !UUID.test(orderId) || !UUID.test(refundId)) throw ApiError.notFound();
+    const sandbox = this.provider;
+    const [r] = await this.db
+      .select({ refund: refunds, organizationId: orders.organizationId, provider: orders.provider })
+      .from(refunds)
+      .innerJoin(orders, eq(orders.id, refunds.orderId))
+      .where(and(eq(refunds.id, refundId), eq(refunds.orderId, orderId)));
+    if (!r || r.provider !== sandbox.name) throw ApiError.notFound();
+    if (r.refund.status !== 'pending' || !r.refund.providerRefundRef) throw new ApiError(409, 'invalid_transition', 'Only a pending refund is confirmed.');
+    const n = sandbox.settleRefund(r.refund.providerRefundRef, money(BigInt(r.refund.amountMinor), r.refund.currency as Currency));
+    await this.webhook(sandbox.name, n.body, n.headers);
+    await this.db.insert(auditLog).values({ actorId: p.userId, action: 'refund.sandbox_confirmed', targetType: 'refund', targetId: refundId, details: { organization_id: r.organizationId, result: 'requested' }, hash: Buffer.alloc(32) });
+    const [after] = await this.db.select().from(refunds).where(eq(refunds.id, refundId));
+    return (await refundDtos(this.db, [after!]))[0]!;
   }
 
   /** مبلغ استرداد مسجَّل بمرجعه عند مزوّدنا، لتأكيده في المزوّد التجريبي؛ أو null للمرجع المجهول. */

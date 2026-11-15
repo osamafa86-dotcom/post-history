@@ -22,7 +22,7 @@ export function refundCreate(body: Record<string, unknown>): RefundCreate | null
 }
 /** الاسترداد للمتصفح بقائمة بيضاء. */
 export function safeRefund(r: Refund): Refund {
-  return { id: r.id, order_id: r.order_id, order_item_ids: [...r.order_item_ids], amount: { amount_minor: r.amount.amount_minor, currency: r.amount.currency }, reason_code: r.reason_code, status: r.status, created_by: r.created_by, created_at: r.created_at, completed_at: r.completed_at ?? null };
+  return { id: r.id, order_id: r.order_id, order_item_ids: [...r.order_item_ids], amount: { amount_minor: r.amount.amount_minor, currency: r.amount.currency }, reason_code: r.reason_code, status: r.status, created_by: r.created_by, created_at: r.created_at, completed_at: r.completed_at ?? null, ...(r.provider === "sandbox" || r.provider === "stripe" ? { provider: r.provider } : {}) };
 }
 /** البنود المتاحة للاسترداد: كل بنود الطلب المدفوع عدا ما في استرداد معلّق أو ناجح (الفاشل يحررها). */
 export function refundable(order: Order, refunds: Refund[]) {

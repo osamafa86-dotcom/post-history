@@ -1,5 +1,5 @@
 import { Controller, Get, Inject, Injectable, Query } from '@nestjs/common';
-import { sql } from 'drizzle-orm';
+import { type SQL, sql } from 'drizzle-orm';
 import { validateQuery } from '../common/contract';
 import { ApiError } from '../common/errors';
 import { DB, type Database } from '../database/database.module';
@@ -192,9 +192,35 @@ export class FinanceReportsService {
     return {
       month: q.month,
       items,
-      totals: earningsTotals(all),
+      totals: await this.withRefunds(earningsTotals(all), q.month, q.currency),
       next_cursor: rest.length > limit && last ? Buffer.from(JSON.stringify([last.share.toString(), last.userId, last.currency])).toString('base64url') : null,
     };
+  }
+
+  /**
+   * مجاميع الشهر بعد الاسترداد (قرار المنسّق 2026-11-15): ما رُدّ للمشترين باستردادات نجحت في الشهر كله، وما دفعته المنصة منه من
+   * `refund_reserve` لأن حصة المساهم كانت قد صُرفت. عملة فيها استرداد بلا بيعة في الشهر تظهر بمجاميع صفرية.
+   */
+  private async withRefunds(totals: ContributorEarningsTotals[], month: string, currency?: Currency): Promise<ContributorEarningsTotals[]> {
+    const [start, end] = monthRange(month);
+    const only = (column: SQL) => (currency ? sql`AND ${column} = ${currency}` : sql``);
+    const back = await this.db.execute<{ currency: Currency; total: string }>(sql`
+      SELECT r.currency, sum(r.amount_minor)::text AS total FROM refunds r
+       WHERE r.status = 'succeeded' AND r.completed_at >= ${start}::timestamptz AND r.completed_at < ${end}::timestamptz ${only(sql`r.currency`)}
+       GROUP BY r.currency`);
+    const borne = await this.db.execute<{ currency: Currency; total: string }>(sql`
+      SELECT p.currency, sum(p.amount_minor)::text AS total FROM postings p
+        JOIN ledger_accounts a ON a.id = p.account_id JOIN journal_entries j ON j.id = p.entry_id
+       WHERE a.kind = 'refund_reserve' AND j.kind = 'refund' AND j.occurred_at >= ${start}::timestamptz AND j.occurred_at < ${end}::timestamptz ${only(sql`p.currency`)}
+       GROUP BY p.currency`);
+    const of = (rows: Array<{ currency: Currency; total: string }>, c: Currency) => BigInt(rows.find((r) => r.currency === c)?.total ?? '0');
+    const zero = (c: Currency): ContributorEarningsTotals => ({ ...earningsTotals([{ userId: '', workName: null, currency: c, sales: 0, gross: 0n, net: 0n, share: 0n, refunded: 0n, shareBasisPoints: null }])[0]!, contributors: 0 });
+    const missing = [...new Set([...back.rows, ...borne.rows].map((r) => r.currency))].filter((c) => !totals.some((t) => t.currency === c));
+    return [...totals, ...missing.map(zero)].map((t) => ({
+      ...t,
+      refunded_to_buyers: toContract(money(of(back.rows, t.currency), t.currency)),
+      borne_by_platform: toContract(money(of(borne.rows, t.currency), t.currency)),
+    }));
   }
 
   /** الطلبات المدفوعة في السنة لكل مؤسسة وعملة، والمسترد منها. */

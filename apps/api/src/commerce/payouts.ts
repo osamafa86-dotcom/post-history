@@ -5,6 +5,7 @@ import { pgError } from '../common/db-errors';
 import { ApiError } from '../common/errors';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { DB, type Database, type Executor, type Tx } from '../database/database.module';
+import { statementDetails } from './statement';
 import { auditLog, ledgerAccounts, payoutApprovals, payoutPolicies, payoutRequests, users } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import { hasRole, type Principal } from '../identity/principal';
@@ -167,6 +168,7 @@ export class PayoutsService {
        ORDER BY p.id DESC
        LIMIT ${limit + 1}`);
     const page = rows.rows.slice(0, limit);
+    const details = await statementDetails(this.db, userId, this.config.PAYOUT_RELEASE_AFTER_DAYS, page);
     return {
       items: page.map((r) => ({
         id: r.id,
@@ -177,6 +179,7 @@ export class PayoutsService {
         reference_type: r.reference_type,
         reference_id: r.reference_id,
         occurred_at: iso(r.occurred_at)!,
+        ...details.get(r.id)!,
       })),
       next_cursor: rows.rows.length > limit ? page[page.length - 1]!.id : null,
     };

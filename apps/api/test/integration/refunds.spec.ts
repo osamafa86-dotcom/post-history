@@ -265,8 +265,63 @@ describe('refunds and commission rules (/v1/orders/{id}/refunds, /v1/commission-
     await http().post(`/sandbox/refunds/sbr_${randomBytes(16).toString('hex')}/succeeded`).expect(404);
   });
 
+  // كشف المراسل (قرار المنسّق 2026-11-15): سطر البيعة والاسترداد يقول ما بيع وحصته منه، والمعلّق متى يتحرر؛ ولا مشترٍ أبدًا
+  it('the reporter statement says what each sale and refund line sold and when a pending share is released, never the buyer', async () => {
+    const t = await template(), shared = reporter, r = await loginAs(h, [{ role: 'reporter' }]);
+    reporter = r.id;
+    const a = await listed([t]), c = await listed([t]);
+    reporter = shared;
+    const b = await buyer(await organization());
+    const created = (await post(b.token, '/orders', { items: [a, c].map((l) => ({ listing_id: l.listingId, license_template_id: t })) }).expect(201)).body;
+    await pay((await ref(b.token, created.id)).ref);
+    const o = await order(b.token, created.id);
+    const titles = (await h.pool.query<{ id: string; title: string }>(`SELECT id, title FROM materials WHERE id = ANY($1)`, [[a.materialId, c.materialId]])).rows;
+    const item = (m: { materialId: string }, share: number) => ({ material_id: m.materialId, title: titles.find((x) => x.id === m.materialId)!.title, license_type: 'editorial_single', share: { amount_minor: share, currency: 'USD' } });
+    const statement = async () => (await http().get('/v1/me/earnings/entries?limit=100').set(as(r.token)).expect(200)).body;
+    const before = await statement();
+    const valid = schemaValidator('EarningsEntryPage');
+    expect(valid(before) ? [] : valid.errors).toEqual([]);
+    const sale = before.items.find((i: { kind: string }) => i.kind === 'sale');
+    expect(sale.sale).toEqual({ sold_at: o.paid_at, items: expect.arrayContaining([item(a, 7000), item(c, 7000)]) });
+    expect(sale.sale.items).toHaveLength(2);
+    // فترة الاسترداد هنا صفر: يتحرر لحظة البيع
+    expect(sale.releases_at).toBe(sale.occurred_at);
+    await confirm((await refund(o.id, [itemOf(o, a.listingId)]).expect(201)).body.id);
+    const after = await statement();
+    const back = after.items.find((i: { kind: string }) => i.kind === 'refund');
+    expect(back.sale).toEqual({ sold_at: o.paid_at, items: [item(a, 7000)] });
+    expect(back.releases_at).toBeNull();
+    expect(JSON.stringify(after)).not.toContain(b.id);
+    expect(JSON.stringify(after)).not.toContain(o.organization_id);
+  });
+
+  it('finance confirms a pending sandbox refund; the month shows what went back to buyers', async () => {
+    const { order: o, buyer: b } = await paidOrder(1);
+    const month = o.paid_at.slice(0, 7);
+    const totals = async () => (await http().get(`/v1/contributor-earnings?month=${month}&currency=USD&limit=1`).set(as(finance.token)).expect(200)).body.totals.find((t: { currency: string }) => t.currency === 'USD');
+    const start = await totals();
+    const created = (await refund(o.id, [o.items[0].id]).expect(201)).body;
+    expect(created).toMatchObject({ status: 'pending', provider: 'sandbox' });
+    const confirmUrl = (orderId: string, refundId: string) => `/orders/${orderId}/refunds/${refundId}/sandbox-confirmation`;
+    await post(b.token, confirmUrl(o.id, created.id)).expect(403);
+    await post(finance.token, confirmUrl(o.id, randomUUID())).expect(404);
+    const other = (await paidOrder(1)).order;
+    await post(finance.token, confirmUrl(other.id, created.id)).expect(404);
+    const done = (await post(finance.token, confirmUrl(o.id, created.id)).expect(200)).body;
+    const valid = schemaValidator('Refund');
+    expect(valid(done) ? [] : valid.errors).toEqual([]);
+    expect(done).toMatchObject({ id: created.id, status: 'succeeded', provider: 'sandbox' });
+    expect((await post(finance.token, confirmUrl(o.id, created.id)).expect(409)).body.code).toBe('invalid_transition');
+    expect((await order(b.token, o.id)).status).toBe('refunded');
+    const end = await totals();
+    expect(end.refunded_to_buyers.amount_minor - start.refunded_to_buyers.amount_minor).toBe(10_000);
+    expect(end.borne_by_platform.amount_minor - start.borne_by_platform.amount_minor).toBe(0);
+  });
+
   it('after the contributor was paid out, the refund takes the share from refund_reserve; the balance never goes below zero', async () => {
     const { order: o } = await paidOrder(1);
+    const totals = async () => (await http().get(`/v1/contributor-earnings?month=${o.paid_at.slice(0, 7)}&currency=USD&limit=1`).set(as(finance.token)).expect(200)).body.totals.find((t: { currency: string }) => t.currency === 'USD');
+    const start = await totals();
     const db = h.app.get<Database>(DB);
     await db.transaction((tx) =>
       movePayable(tx, { ownerId: reporter, from: 'pending', to: 'paid', amount: money(7000n, 'USD'), kind: 'payout', referenceType: 'payout', referenceId: o.id, idempotencyKey: `test-payout:${o.id}`, actorId: null }),
@@ -279,6 +334,10 @@ describe('refunds and commission rules (/v1/orders/{id}/refunds, /v1/commission-
     const reserve = got.filter((l) => l.kind === 'refund_reserve').reduce((s, l) => s + Number(l.amount), 0);
     expect(pendingTaken + reserve).toBe(7000);
     expect(pendingTaken).toBeLessThanOrEqual(-before);
+    // ما تحمّلته المنصة من refund_reserve يظهر في مجاميع الشهر
+    const end = await totals();
+    expect(end.borne_by_platform.amount_minor - start.borne_by_platform.amount_minor).toBe(reserve);
+    expect(end.refunded_to_buyers.amount_minor - start.refunded_to_buyers.amount_minor).toBe(10_000);
     const after = await count(`SELECT COALESCE(sum(p.amount_minor), 0)::int AS n FROM postings p JOIN ledger_accounts a ON a.id = p.account_id WHERE a.kind = 'contributor_payable' AND a.owner_id = $1 AND a.payable_state = 'pending'`, [reporter]);
     expect(after).toBeLessThanOrEqual(0);
   });

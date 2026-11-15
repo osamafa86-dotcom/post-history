@@ -123,10 +123,12 @@ function PayoutPolicies({ locale }: { locale: Locale }) {
     {!writer ? <p className="muted">{t.policyReadOnly}</p> : !draft ? <button className="secondary" onClick={() => { mutation.clearStatus(); setInvalid(false); setDraft({ currency: "USD", minimum: "50", dual: "1000", reserve: "10", from: "" }); }}>{t.newPolicy}</button>
       : <form className="rule-form" noValidate onSubmit={ev => { ev.preventDefault(); void save(); }}><p className="notice">{t.appendOnly}</p>
         <div className="rule-row"><label>{t.currency}<select value={draft.currency} onChange={ev => setDraft({ ...draft, currency: ev.target.value as (typeof currencies)[number] })}>{currencies.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
-          <label>{t.minimum}<input type="number" min={0} step="0.01" dir="ltr" value={draft.minimum} onChange={ev => setDraft({ ...draft, minimum: ev.target.value })} /></label>
+          <label>{t.minimum}<input type="number" min={0.01} step="0.01" dir="ltr" value={draft.minimum} onChange={ev => setDraft({ ...draft, minimum: ev.target.value })} /></label>
           <label>{t.dualAbove}<input type="number" min={0} step="0.01" dir="ltr" value={draft.dual} onChange={ev => setDraft({ ...draft, dual: ev.target.value })} /></label>
           <label>{t.reserve}<input type="number" min={0} max={earningsLimits.reserveMax / 100} step="0.01" dir="ltr" value={draft.reserve} onChange={ev => setDraft({ ...draft, reserve: ev.target.value })} /></label></div>
         <label>{t.effectiveFrom}<input type="datetime-local" dir="ltr" value={draft.from} onChange={ev => setDraft({ ...draft, from: ev.target.value })} /></label>
+        {/* حد أدنى فوق حد الاعتماد الثنائي: كل طلب يحتاج معتمدَين. يُقبل، ويُقال قبل الحفظ */}
+        {Number(draft.minimum) > Number(draft.dual) && draft.dual !== "" && <p className="notice attention" role="status" data-testid="policy-dual-warning">{t.minimumAboveDual}</p>}
         {invalid && <p className="notice error" role="alert">{t.invalid}</p>}
         <ActionStatus status={mutation.status} locale={locale} />
         <div className="actions"><button disabled={mutation.busy}>{mutation.busy ? m.review.saving : t.savePolicy}</button><button type="button" className="secondary" disabled={mutation.busy} onClick={() => setDraft(null)}>{m.cancel}</button></div>
