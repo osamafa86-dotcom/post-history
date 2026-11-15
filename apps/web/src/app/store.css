@@ -219,6 +219,19 @@ label.license-option.blocked { cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
   .skeleton-card .store-card-cover, .skeleton-line, .skeleton-block { animation: none; }
 }
+/* رحلة المشتري: نص طويل لا يمدّ الصفحة (S2، S3)، وما تغيّر في السلة، وانتظار تأكيد الدفع فوق صفحة الطلب لا مكانها. */
+.cart-v2-text > * { min-inline-size: 0; overflow-wrap: anywhere; }
+.cart-v2-text > strong, .cart-v2-text > small:not([data-testid="cart-change"]) { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cart-v2-text > .cart-v2-note { color: var(--v2-c-state-warn); font-weight: 600; }
+.cart-v2-text > .field-error { font-size: var(--v2-font-label-size); font-weight: 600; }
+.cart-v2-line[data-blocked] .cart-v2-price { text-decoration: line-through; color: var(--v2-c-text-secondary); }
+.cart-pending { text-align: start; }
+.store-title-row h1, .store-description, .license-option-text > * { min-inline-size: 0; overflow-wrap: anywhere; }
+.license-picker > .notice { margin: 0; }
+.template-name strong { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-inline-size: 48ch; overflow-wrap: anywhere; }
+.notice.confirming { display: flex; align-items: center; justify-items: start; gap: var(--v2-space-4); margin-block: 0 var(--v2-space-5); font-size: var(--v2-font-label-size); }
+.notice.confirming p { margin: 0; }
+.notice.confirming .spinner { flex: none; }
 @media print {
   .app-shell, .main-content { background: var(--v2-c-bg-raised); }
   .main-content { padding: 0; }

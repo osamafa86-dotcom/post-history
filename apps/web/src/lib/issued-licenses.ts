@@ -28,6 +28,19 @@ export function safeLicense(l: IssuedLicense): IssuedLicense {
     valid_from: l.valid_from, valid_until: l.valid_until ?? null, exclusive_until: l.exclusive_until ?? null, issued_at: l.issued_at, delivery_ready: l.delivery_ready === true,
   };
 }
+/**
+ * ما تملكه المؤسسة ساريًا على إدراج (S2): رقم ترخيصها لكل قالب، ونهاية حصريتها هي عليه إن كانت قائمة. الساري ما حالته `active` ولم تمضِ نهايته
+ * (وإن لم يحدّث الخادم حالته بعد)؛ المُبطل والمنتهي وتراخيص الإدراجات الأخرى خارجه.
+ */
+export function heldOn(licenses: readonly IssuedLicense[], listingId: string, now: number): { numbers: Record<string, string>; exclusiveUntil: string | null } {
+  const numbers: Record<string, string> = {}; let exclusiveUntil: string | null = null;
+  for (const l of licenses) {
+    if (l.listing_id !== listingId || l.status !== "active" || (l.valid_until && Date.parse(l.valid_until) <= now)) continue;
+    numbers[l.license_template_id] ??= l.license_number;
+    if (l.exclusive_until && Date.parse(l.exclusive_until) > now && (!exclusiveUntil || l.exclusive_until > exclusiveUntil)) exclusiveUntil = l.exclusive_until;
+  }
+  return { numbers, exclusiveUntil };
+}
 /** رابط حزمة التسليم الموقّع: لا يُوجَّه المتصفح إلى أصل خارج أصول التخزين في الإعداد. */
 export function allowedDownload(value: unknown, origins: readonly string[]) {
   if (typeof value !== "string") return false;
