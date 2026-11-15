@@ -2967,6 +2967,10 @@
   "clips": {
     "title": "مقاطع المادة",
     "counter": "المقطع {n} من {total}",
-    "open": "شغّل المقطع {n} من {total}"
-  }
+    "open": "شغّل المقطع {n} من {total}",
+    "photosTitle": "صور المادة",
+    "photoCounter": "الصورة {n} من {total}",
+    "openPhoto": "اعرض الصورة {n} من {total}"
+  },
+  "previewNoneForType": "لا معاينة لهذا النوع؛ الأصل محفوظ."
 }

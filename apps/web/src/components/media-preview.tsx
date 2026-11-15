@@ -43,19 +43,23 @@ function ClipPicture({ locale, materialId, file, number }: { locale: Locale; mat
 /**
  * معاينة الطاقم: النسخة الخفيفة التي أنتجها الخادم وحدها (`staffPreview`)، لا نسخة الهاتف المرفوعة. بلا نسخة من الخادم يظهر الملصق مكانها
  * مع «قيد التحضير»، أو الحالة وحدها إن لم يُنتَج ملصق بعد. المادة بعدة ملفات فيديو: مصغّرة كل مقطع زرّ يبدّل المشغّل إليه، وفوقها «1 من N».
+ * والصورة الثابتة تُعرض مصغّرتها مكان المشغّل بنسبتها، بالتبديل نفسه بين الصور؛ وأصل لا يُصنع له ما يُعرض (HEIC وRAW) يُقال عنه ذلك.
  */
 export function MediaPreview({ locale, material }: { locale: Locale; material: Material }) {
-  const m = messages[locale], { poster, thumbnails, clips } = staffPreview(material), [chosen, setChosen] = useState<string | null>(null);
-  const at = Math.max(0, clips.findIndex(clip => clip.proxy.id === chosen)), current = clips[at] ?? null, many = clips.length > 1;
-  const count = (text: string, n: number) => text.replace("{n}", String(n)).replace("{total}", String(clips.length));
-  // مصغّرات لا مقطع لها بعد (نسختها قيد التحضير) تبقى صورًا في الشريط؛ ومصغّرات المقاطع أزرارها.
-  const paired = new Set(many ? clips.map(clip => clip.thumbnail?.id) : []), strip = (current ? thumbnails : thumbnails.filter(file => file !== poster)).filter(file => !paired.has(file.id));
+  const m = messages[locale], { poster, thumbnails, clips, photos, unseen } = staffPreview(material), [chosen, setChosen] = useState<string | null>(null);
+  // ما يُعرض مكان المشغّل: مقاطع الفيديو ثم الصور الثابتة (مصغّرة الصورة التي صنعها الخادم هي معاينتها)، ولكلٍّ زرّه في الشريط.
+  const items = [...clips.map(clip => ({ id: clip.proxy.id, video: clip.proxy as MaterialFile | null, picture: clip.thumbnail })), ...photos.map(file => ({ id: file.id, video: null as MaterialFile | null, picture: file as MaterialFile | null }))];
+  const at = Math.max(0, items.findIndex(item => item.id === chosen)), current = items[at] ?? null, many = items.length > 1, still = !!current && !current.video;
+  const count = (text: string, n: number) => text.replace("{n}", String(n)).replace("{total}", String(items.length));
+  // مصغّرات لا بند لها بعد (نسختها قيد التحضير) تبقى صورًا في الشريط؛ ومصغّرات البنود أزرارها. صورة واحدة لا شريط تحتها.
+  const paired = new Set(many ? items.map(item => item.picture?.id) : still ? [current.picture?.id] : []), strip = (current ? thumbnails : thumbnails.filter(file => file !== poster)).filter(file => !paired.has(file.id));
   return <section className="preview-panel" aria-label={m.preview}>
-    {current ? <PreviewAsset key={`${material.id}-${current.proxy.id}`} locale={locale} materialId={material.id} file={current.proxy} />
-      : <div className="preview-empty" data-testid="preview-preparing">{poster ? <PreviewAsset key={`${material.id}-${poster.id}`} locale={locale} materialId={material.id} file={poster} /> : <span className="play-mark" aria-hidden="true" />}<p role="status">{material.files.some(file => file.kind === "original" || file.kind === "proxy") ? m.previewPreparing : m.previewNoFile}</p></div>}
-    {many && <p className="clip-counter" role="status" data-testid="clip-counter">{count(m.clips.counter, at + 1)}</p>}
-    {(many || strip.length > 0) && <div className="thumbnails" role={many ? "group" : undefined} aria-label={many ? m.clips.title : undefined}>
-      {many && clips.map((clip, index) => <button key={clip.proxy.id} type="button" className="clip-button" data-testid="clip-button" aria-pressed={index === at} aria-label={count(m.clips.open, index + 1)} onClick={() => setChosen(clip.proxy.id)}><ClipPicture locale={locale} materialId={material.id} file={clip.thumbnail} number={index + 1} /></button>)}
+    {current?.video ? <PreviewAsset key={`${material.id}-${current.id}`} locale={locale} materialId={material.id} file={current.video} />
+      : current?.picture ? <div className="photo-stage" data-testid="photo-stage"><PreviewAsset key={`${material.id}-${current.id}`} locale={locale} materialId={material.id} file={current.picture} /></div>
+      : <div className="preview-empty" data-testid="preview-preparing">{poster ? <PreviewAsset key={`${material.id}-${poster.id}`} locale={locale} materialId={material.id} file={poster} /> : <span className="play-mark" aria-hidden="true" />}<p role="status">{unseen ? m.previewNoneForType : material.files.some(file => file.kind === "original" || file.kind === "proxy") ? m.previewPreparing : m.previewNoFile}</p></div>}
+    {many && <p className="clip-counter" role="status" data-testid="clip-counter">{count(still ? m.clips.photoCounter : m.clips.counter, at + 1)}</p>}
+    {(many || strip.length > 0) && <div className="thumbnails" role={many ? "group" : undefined} aria-label={many ? (clips.length ? m.clips.title : m.clips.photosTitle) : undefined}>
+      {many && items.map((item, index) => <button key={item.id} type="button" className="clip-button" data-testid="clip-button" aria-pressed={index === at} aria-label={count(item.video ? m.clips.open : m.clips.openPhoto, index + 1)} onClick={() => setChosen(item.id)}><ClipPicture locale={locale} materialId={material.id} file={item.picture} number={index + 1} /></button>)}
       {strip.map(file => <PreviewAsset key={`${material.id}-${file.id}`} locale={locale} materialId={material.id} file={file} small />)}</div>}
   </section>;
 }
