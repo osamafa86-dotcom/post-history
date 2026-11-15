@@ -64,7 +64,7 @@ test("P1 signs in with a passkey, says so when it is cancelled, refused or off, 
 
 test("Security lists passkeys, adds one after a password and code re-check, revokes with a confirmation, and shows backup codes once", async ({ page, request }) => {
   await authenticator(page, fresh); await login(page, "reviewer");
-  await page.getByRole("button", { name: new RegExp(`^${ar.shell.account}`) }).click(); await page.getByTestId("menu-security").click();
+  await page.getByRole("button", { name: new RegExp(ar.shell.account) }).click(); await page.getByTestId("menu-security").click();
   await expect(page.getByRole("heading", { level: 1, name: ar.security.title })).toBeVisible();
   const passkeys = page.getByTestId("passkeys");
   await expect(passkeys.getByRole("listitem")).toHaveCount(1); await expect(passkeys.getByRole("listitem")).toContainText("حاسوب المكتب"); await expect(passkeys.getByRole("listitem")).toContainText(ar.security.synced);
