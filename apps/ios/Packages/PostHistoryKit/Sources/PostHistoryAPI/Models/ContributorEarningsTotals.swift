@@ -22,8 +22,12 @@ public struct ContributorEarningsTotals: Sendable, Codable, Hashable {
     public var share: Money
     public var refunded: Money
     public var shareBasisPoints: Int?
+    /** ما رُدّ للمشترين باستردادات نجحت في الشهر بهذه العملة، كله (حصة المنصة وحصص المساهمين وما تحمّلته المنصة). أُضيف بعد v0.3، قد يغيب */
+    public var refundedToBuyers: Money?
+    /** ما دفعته المنصة من `refund_reserve` في استردادات الشهر لأن حصة المساهم كانت قد صُرفت (ADR 0031). أُضيف بعد v0.3، قد يغيب */
+    public var borneByPlatform: Money?
 
-    public init(currency: Currency, contributors: Int, sales: Int, gross: Money, feesAndTaxes: Money, net: Money, share: Money, refunded: Money, shareBasisPoints: Int?) {
+    public init(currency: Currency, contributors: Int, sales: Int, gross: Money, feesAndTaxes: Money, net: Money, share: Money, refunded: Money, shareBasisPoints: Int?, refundedToBuyers: Money? = nil, borneByPlatform: Money? = nil) {
         self.currency = currency
         self.contributors = contributors
         self.sales = sales
@@ -33,6 +37,8 @@ public struct ContributorEarningsTotals: Sendable, Codable, Hashable {
         self.share = share
         self.refunded = refunded
         self.shareBasisPoints = shareBasisPoints
+        self.refundedToBuyers = refundedToBuyers
+        self.borneByPlatform = borneByPlatform
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -45,6 +51,8 @@ public struct ContributorEarningsTotals: Sendable, Codable, Hashable {
         case share
         case refunded
         case shareBasisPoints = "share_basis_points"
+        case refundedToBuyers = "refunded_to_buyers"
+        case borneByPlatform = "borne_by_platform"
     }
 
     // Encodable protocol methods
@@ -60,6 +68,8 @@ public struct ContributorEarningsTotals: Sendable, Codable, Hashable {
         try container.encode(share, forKey: .share)
         try container.encode(refunded, forKey: .refunded)
         try container.encode(shareBasisPoints, forKey: .shareBasisPoints)
+        try container.encodeIfPresent(refundedToBuyers, forKey: .refundedToBuyers)
+        try container.encodeIfPresent(borneByPlatform, forKey: .borneByPlatform)
     }
 }
 

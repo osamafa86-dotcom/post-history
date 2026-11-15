@@ -9,8 +9,11 @@ import Foundation
 
 public struct BuyerOrganizationState: Sendable, Codable, Hashable {
 
+    public static let invitedMembersRule = NumericRule<Int>(minimum: 0, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     public static let activeMembersRule = NumericRule<Int>(minimum: 0, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     public var id: UUID
+    /** المدعوون الذين لم يُكملوا القبول، ومنهم الدعوات المتعارضة القائمة؛ يشغلون مقاعد مع النشطين (`active_members`). أُضيف بعد v0.3، قد يغيب */
+    public var invitedMembers: Int?
     public var activeMembers: Int
     /** أول انتقال إلى `active` */
     public var verifiedAt: Date?
@@ -19,8 +22,9 @@ public struct BuyerOrganizationState: Sendable, Codable, Hashable {
     public var createdAt: Date
     public var updatedAt: Date
 
-    public init(id: UUID, activeMembers: Int, verifiedAt: Date?, rejectionReason: BuyerOrganizationRejectionReason? = nil, createdAt: Date, updatedAt: Date) {
+    public init(id: UUID, invitedMembers: Int? = nil, activeMembers: Int, verifiedAt: Date?, rejectionReason: BuyerOrganizationRejectionReason? = nil, createdAt: Date, updatedAt: Date) {
         self.id = id
+        self.invitedMembers = invitedMembers
         self.activeMembers = activeMembers
         self.verifiedAt = verifiedAt
         self.rejectionReason = rejectionReason
@@ -30,6 +34,7 @@ public struct BuyerOrganizationState: Sendable, Codable, Hashable {
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case id
+        case invitedMembers = "invited_members"
         case activeMembers = "active_members"
         case verifiedAt = "verified_at"
         case rejectionReason = "rejection_reason"
@@ -42,6 +47,7 @@ public struct BuyerOrganizationState: Sendable, Codable, Hashable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(invitedMembers, forKey: .invitedMembers)
         try container.encode(activeMembers, forKey: .activeMembers)
         try container.encode(verifiedAt, forKey: .verifiedAt)
         try container.encodeIfPresent(rejectionReason, forKey: .rejectionReason)

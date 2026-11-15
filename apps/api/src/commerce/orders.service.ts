@@ -6,17 +6,18 @@ import { pgError } from '../common/db-errors';
 import { ApiError } from '../common/errors';
 import { DB, type Database, type Executor, type Tx } from '../database/database.module';
 import {
+  auditLog,
   buyerOrganizations,
   catalogListings,
   exclusiveHolds,
   licenses,
   licenseTemplateVersions,
   listingOffers,
-  materialContributors,
   materials,
   orderItems,
   orders,
   paymentEvents,
+  refunds,
 } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import { hasRole, type Principal } from '../identity/principal';
@@ -27,11 +28,12 @@ import { applicableRule, type AppliedRule } from './commission-rules';
 import { requestDelivery } from './delivery';
 import { postEntry, type AccountRef } from './ledger';
 import { isSensitive } from './listing-store';
-import { allocate, type Currency, money, type Money, percentToBasisPoints } from './money';
+import { type Currency, money, type Money } from './money';
+import { type ItemShares, itemSharesToDetails, splitItem } from './sale-shares';
 import type { CheckoutLocale } from './sandbox-page';
-import { PAYMENT_PROVIDER, type PaymentProvider, type ProviderEvent, WebhookSignatureError } from './payment-provider';
+import { PAYMENT_PROVIDER, type PaymentProvider, type ProviderEvent, SandboxPaymentProvider, WebhookSignatureError } from './payment-provider';
 import { IgnoredWebhookEvent, LiveModeEvent } from './stripe-provider';
-import { applyRefundSucceeded } from './refunds';
+import { applyRefundSucceeded, toDtos as refundDtos } from './refunds';
 
 export type Order = components['schemas']['Order'];
 export type OrderCreate = components['schemas']['OrderCreate'];
@@ -44,6 +46,10 @@ const HOLD_MINUTES = 15;
 const ORDER_HOURS = 24;
 // أبجدية Crockford بلا I وL وO وU، كما في نمط رقم الترخيص في العقد
 const LICENSE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+/** لماذا لم يصدر ترخيص لدفعة مقبوضة بمبلغها الصحيح: يُكتب في التدقيق مع طلب استردادها من المزوّد. */
+type Unlicensed = 'order_cancelled' | 'organization_inactive' | 'exclusivity_lost' | 'rights_changed';
+type Applied = { outcome: 'applied' | 'ignored' | 'review'; unlicensed?: Unlicensed };
 
 /**
  * الطلبات والدفع التجريبي (العقد v0.3، الجزء 4، ADR 0025 وADR 0032). الطلب يُنشأ مرة من السلة ويجمّد لكل بند الإدراج
@@ -171,6 +177,8 @@ export class OrdersService {
     if (o.status !== 'pending_payment') {
       throw new ApiError(409, 'order_state_conflict', 'The order is not awaiting payment.');
     }
+    // المؤسسة فاعلة عند بدء الدفع كما عند إنشاء الطلب: مؤسسة عُلّقت بعد طلبها لا تُفتح لها جلسة دفع
+    if (!(await organizationActive(tx, o.organizationId))) throw new ApiError(403, 'forbidden_scope', 'The organization cannot buy until it is active.');
     const lost = await tx
       .select({ id: orderItems.id })
       .from(orderItems)
@@ -187,10 +195,11 @@ export class OrdersService {
     return o;
   }
 
+  /** الإلغاء يُبطل جلسة الدفع المفتوحة عند المزوّد بعد حفظه، فلا تُقبض دفعة لطلب ملغى (ADR 0032، تعديل 2026-11-15). */
   async cancel(p: Principal, id: string): Promise<Order> {
     if (!UUID.test(id)) throw ApiError.notFound();
     await this.db.transaction((tx) => stillOpen(tx, id));
-    return this.db.transaction(async (tx) => {
+    const { order, session } = await this.db.transaction(async (tx) => {
       const [o] = await tx.select().from(orders).where(and(eq(orders.id, id), scope(p))).for('update');
       if (!o) throw ApiError.notFound();
       if (o.status !== 'pending_payment') {
@@ -199,13 +208,50 @@ export class OrdersService {
       const [after] = await tx.update(orders).set({ status: 'cancelled', cancelReason: 'buyer' }).where(eq(orders.id, id)).returning();
       await releaseHolds(tx, id);
       await statusEvent(tx, after!);
-      return read(tx, id);
+      return { order: await read(tx, id), session: o.provider === this.provider?.name ? o.providerRef : null };
     });
+    // خارج المعاملة وبلا شرط على نجاحه: الإلغاء محفوظ، ودفعة تسبق الإبطال تُسترد من إشعارها (apply)
+    if (session) await this.provider!.cancelCheckout(session).catch(() => undefined);
+    return order;
+  }
+
+  /**
+   * تأكيد المالية لاسترداد معلّق مع المزوّد التجريبي وحده (قرار المنسّق 2026-11-15): الإشعار الموقّع نفسه بمرجعه ومبلغه من سجله، مطبَّقًا
+   * كأي إشعار. بلا المزوّد التجريبي أو لاسترداد طلب آخر 404، ولغير المعلّق 409. يُسجَّل في التدقيق. لا تأكيد آلي.
+   */
+  async confirmSandboxRefund(p: Principal, orderId: string, refundId: string): Promise<components['schemas']['Refund']> {
+    if (!(this.provider instanceof SandboxPaymentProvider) || !UUID.test(orderId) || !UUID.test(refundId)) throw ApiError.notFound();
+    const sandbox = this.provider;
+    const [r] = await this.db
+      .select({ refund: refunds, organizationId: orders.organizationId, provider: orders.provider })
+      .from(refunds)
+      .innerJoin(orders, eq(orders.id, refunds.orderId))
+      .where(and(eq(refunds.id, refundId), eq(refunds.orderId, orderId)));
+    if (!r || r.provider !== sandbox.name) throw ApiError.notFound();
+    if (r.refund.status !== 'pending' || !r.refund.providerRefundRef) throw new ApiError(409, 'invalid_transition', 'Only a pending refund is confirmed.');
+    const n = sandbox.settleRefund(r.refund.providerRefundRef, money(BigInt(r.refund.amountMinor), r.refund.currency as Currency));
+    await this.webhook(sandbox.name, n.body, n.headers);
+    await this.db.insert(auditLog).values({ actorId: p.userId, action: 'refund.sandbox_confirmed', targetType: 'refund', targetId: refundId, details: { organization_id: r.organizationId, result: 'requested' }, hash: Buffer.alloc(32) });
+    const [after] = await this.db.select().from(refunds).where(eq(refunds.id, refundId));
+    return (await refundDtos(this.db, [after!]))[0]!;
+  }
+
+  /** مبلغ استرداد مسجَّل بمرجعه عند مزوّدنا، لتأكيده في المزوّد التجريبي؛ أو null للمرجع المجهول. */
+  async refundAmountByProviderRef(refundRef: string): Promise<Money | null> {
+    if (!this.provider) return null;
+    const [r] = await this.db
+      .select({ amountMinor: refunds.amountMinor, currency: refunds.currency })
+      .from(refunds)
+      .innerJoin(orders, eq(orders.id, refunds.orderId))
+      .where(and(eq(refunds.providerRefundRef, refundRef), eq(orders.provider, this.provider.name)));
+    return r ? money(BigInt(r.amountMinor), r.currency as Currency) : null;
   }
 
   /**
    * الإشعار الموقّع (ADR 0032): التوقيع قبل التحليل، ثم `(provider, event_id)` مرة واحدة تحت قفل استشاري، والنتيجة في
-   * معاملة واحدة. المكرر والمجهول والمحسوم 200 بلا أثر؛ والمبلغ غير المطابق يُكتب للمراجعة بلا ترخيص.
+   * معاملة واحدة. المكرر والمجهول والمحسوم 200 بلا أثر؛ والمبلغ غير المطابق يُكتب للمراجعة بلا ترخيص. ودفعة بمبلغها
+   * الصحيح لا يصدر لها ترخيص (طلب ملغى، مؤسسة غير فاعلة، حصرية ذهبت، حقوق تغيّرت) تُكتب للمراجعة ويُطلب استردادها من
+   * المزوّد بعد حفظ الإشعار (تعديل 2026-11-15).
    */
   async webhook(providerName: string, rawBody: Buffer, headers: Record<string, string | undefined>): Promise<{ received: true }> {
     if (!this.provider || providerName !== this.provider.name) throw ApiError.notFound();
@@ -219,22 +265,25 @@ export class OrdersService {
       if (err instanceof LiveModeEvent) throw new ApiError(400, 'live_payments_disabled', 'Live payments are disabled.');
       throw err;
     }
-    await this.db.transaction(async (tx) => {
+    const unlicensed = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`payment:${providerName}:${event.eventId}`}))`);
       const [seen] = await tx
         .select({ id: paymentEvents.eventId })
         .from(paymentEvents)
         .where(and(eq(paymentEvents.provider, providerName), eq(paymentEvents.eventId, event.eventId)));
-      if (seen) return;
+      if (seen) return null;
       let orderId: string | null;
-      let outcome: 'applied' | 'ignored' | 'review';
+      let outcome: Applied['outcome'];
+      let refund: { orderId: string; organizationId: string; reason: Unlicensed } | null = null;
       if (event.type === 'refund.succeeded') {
         // بمرجع الاسترداد، أو بمرجع الدفع حين يحمله إشعار المزوّد
         ({ orderId, outcome } = await applyRefundSucceeded(tx, providerName, event));
       } else {
         const [o] = await tx.select().from(orders).where(and(eq(orders.provider, providerName), eq(orders.providerRef, event.providerRef))).for('update');
         orderId = o?.id ?? null;
-        outcome = o ? await this.apply(tx, o, event) : 'ignored';
+        const applied: Applied = o ? await this.apply(tx, o, event) : { outcome: 'ignored' };
+        outcome = applied.outcome;
+        if (o && applied.unlicensed) refund = { orderId: o.id, organizationId: o.organizationId, reason: applied.unlicensed };
       }
       await tx.insert(paymentEvents).values({
         provider: providerName,
@@ -247,17 +296,47 @@ export class OrdersService {
         orderId,
         outcome,
       });
+      return refund;
     });
+    if (unlicensed) await this.refundUnlicensed(event, unlicensed);
     return { received: true };
   }
 
-  private async apply(tx: Tx, o: OrderRow, event: ProviderEvent): Promise<'applied' | 'ignored' | 'review'> {
-    if (event.type === 'dispute.opened') return 'review';
-    if (event.type === 'payment.failed') return o.status === 'pending_payment' ? 'applied' : 'ignored';
-    if (o.status !== 'pending_payment' && o.status !== 'expired') return 'ignored';
-    if (event.amount.currency !== o.currency || event.amount.amountMinor !== BigInt(o.totalMinor)) return 'review';
+  /**
+   * دفعة مقبوضة لن يصدر لها ترخيص: يُطلب استردادها من المزوّد بمبلغ الإشعار، مرة لكل إشعار (مفتاح منع التكرار من معرّفه)،
+   * وتُكتب النتيجة في التدقيق: `requested` وصل المزوّد، و`failed` رفضه أو تعذّر فتستردها المالية يدويًا. خارج معاملة
+   * الإشعار (لا قفل على الطلب أثناء انتظار الشبكة)، والإشعار مقبول في الحالين فلا يعيده المزوّد. لا قيد في الدفتر: لم تُكتب
+   * بيعة أصلًا.
+   */
+  private async refundUnlicensed(event: ProviderEvent, u: { orderId: string; organizationId: string; reason: Unlicensed }): Promise<void> {
+    let result: 'requested' | 'failed' = 'requested';
+    try {
+      await this.provider!.refund({ providerRef: event.providerRef, amount: event.amount, idempotencyKey: `unlicensed:${event.eventId}` });
+    } catch {
+      result = 'failed';
+    }
+    await this.db.insert(auditLog).values({
+      actorId: null,
+      action: 'payment.unlicensed_refund',
+      targetType: 'order',
+      targetId: u.orderId,
+      details: { organization_id: u.organizationId, reason_code: u.reason, result },
+      hash: Buffer.alloc(32),
+    });
+  }
+
+  private async apply(tx: Tx, o: OrderRow, event: ProviderEvent): Promise<Applied> {
+    if (event.type === 'dispute.opened') return { outcome: 'review' };
+    if (event.type === 'payment.failed') return { outcome: o.status === 'pending_payment' ? 'applied' : 'ignored' };
+    // مدفوع أو مستردّ: إشعار ثانٍ للدفعة نفسها، بلا أثر
+    if (o.status === 'paid' || o.status === 'refunded') return { outcome: 'ignored' };
+    // طلب ألغاه المشتري (أو أُلغي بسبب) ثم قُبضت دفعته: لا ترخيص، وما قُبض يُرد كما ورد في الإشعار
+    if (o.status === 'cancelled') return { outcome: 'review', unlicensed: 'order_cancelled' };
+    if (event.amount.currency !== o.currency || event.amount.amountMinor !== BigInt(o.totalMinor)) return { outcome: 'review' };
+    // المؤسسة فاعلة عند التأكيد كما عند بدء الدفع. الطلب يبقى كما هو (لا سبب إلغاء له في العقد) وينتهي بمهلته
+    if (!(await organizationActive(tx, o.organizationId))) return { outcome: 'review', unlicensed: 'organization_inactive' };
     const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, o.id)).orderBy(orderItems.id);
-    // إعادة التحقق عند التأكيد: الحجز الحصري قائم لم يُحرَّر، والحقوق قابلة للبيع
+    // إعادة التحقق عند التأكيد: الحجز الحصري قائم لم يُحرَّر، والحقوق قابلة للبيع. الطلب المنتهي الذي ما زال متاحًا يُدفع
     const reason = await revalidate(tx, items);
     if (reason) {
       // الدفع بلا ترخيص يُسترد (الجزء 5)؛ الطلب المعلّق يُلغى بسببه، والمنتهي يبقى منتهيًا
@@ -266,13 +345,13 @@ export class OrdersService {
         await releaseHolds(tx, o.id);
         await statusEvent(tx, after!);
       }
-      return 'review';
+      return { outcome: 'review', unlicensed: reason };
     }
     const [paid] = await tx.update(orders).set({ status: 'paid', paidAt: sql`now()` }).where(eq(orders.id, o.id)).returning();
     await statusEvent(tx, paid!);
     for (const item of items) await this.issue(tx, paid!, item);
     await this.postSale(tx, paid!, items);
-    return 'applied';
+    return { outcome: 'applied' };
   }
 
   private async issue(tx: Tx, o: OrderRow, item: ItemRow): Promise<void> {
@@ -337,20 +416,16 @@ export class OrdersService {
       lines.set(key, { account, amount: (cur?.amount ?? 0n) - amount });
     };
     const applied: AppliedRule[] = [];
+    const shares: ItemShares[] = [];
     for (const item of items) {
       // قاعدة العمولة السارية لحظة تأكيد الدفع (الجزء 6)، وبلا قاعدة PLATFORM_COMMISSION_BASIS_POINTS
       const rule = await applicableRule(tx, item, o.paidAt!, this.config.PLATFORM_COMMISSION_BASIS_POINTS);
       applied.push(rule);
-      const bp = BigInt(rule.basisPoints);
-      const price = money(item.priceMinor, currency);
-      const split = allocate(price, [
-        { key: 'platform', weight: bp },
-        { key: 'contributors', weight: 10_000n - bp },
-      ]);
-      credit('platform', { kind: 'platform_revenue', currency }, split.get('platform')!.amountMinor);
-      const shares = await contributorShares(tx, item.materialId);
-      for (const [owner, m] of allocate(split.get('contributors')!, shares)) {
-        credit(`c:${owner}`, { kind: 'contributor_payable', ownerId: owner, state: 'pending', currency }, m.amountMinor);
+      const split = await splitItem(tx, item, currency, rule.basisPoints);
+      shares.push(split);
+      credit('platform', { kind: 'platform_revenue', currency }, split.platform);
+      for (const c of split.contributors) {
+        credit(`c:${c.userId}`, { kind: 'contributor_payable', ownerId: c.userId, state: 'pending', currency }, c.amount);
       }
     }
     const postings: Array<{ account: AccountRef; amount: Money }> = [{ account: { kind: 'provider_clearing', currency }, amount: money(BigInt(o.totalMinor), currency) }];
@@ -360,11 +435,13 @@ export class OrdersService {
       referenceType: 'order',
       referenceId: o.id,
       // القاعدة المجمّدة لكل بند بترتيب البنود
-      // نقاط المنصة رقمًا واحدًا حين تتفق البنود (وإلا null)، والقاعدة ونقاطها لكل بند بترتيب البنود
+      // نقاط المنصة رقمًا واحدًا حين تتفق البنود (وإلا null)، والقاعدة ونقاطها لكل بند بترتيب البنود، وحصص كل بند بمعرّفه
+      // فيعكس استرداده حصصه هو (ADR 0031، تعديل 2026-11-15)
       details: {
         platform_basis_points: applied.every((r) => r.basisPoints === applied[0]!.basisPoints) ? applied[0]!.basisPoints : null,
         commission_rules: applied.map((r) => r.ruleId),
         item_basis_points: applied.map((r) => r.basisPoints),
+        item_shares: itemSharesToDetails(shares),
       },
       idempotencyKey: `sale:${o.id}`,
       actorId: null,
@@ -423,6 +500,11 @@ function mapGuard(err: unknown): unknown {
     return new ApiError(409, 'listing_unavailable', 'The offer is not available.');
   }
   return err;
+}
+
+async function organizationActive(tx: Tx, organizationId: string): Promise<boolean> {
+  const [org] = await tx.select({ status: buyerOrganizations.status }).from(buyerOrganizations).where(eq(buyerOrganizations.id, organizationId)).for('share');
+  return org?.status === 'active';
 }
 
 /** الحجوزات المنتهية للمادة تُحرَّر قبل حجز جديد، وطلباتها المعلّقة تنتهي. */
@@ -496,14 +578,6 @@ async function revalidate(tx: Tx, items: ItemRow[]): Promise<'exclusivity_lost' 
     }
   }
   return null;
-}
-
-/** حصص المساهمين من material_contributors (مجموعها 100.00)، وإلا المراسل وحده. */
-async function contributorShares(tx: Tx, materialId: string): Promise<Array<{ key: string; weight: bigint }>> {
-  const rows = await tx.select({ userId: materialContributors.userId, share: materialContributors.sharePercent }).from(materialContributors).where(eq(materialContributors.materialId, materialId));
-  if (rows.length > 0) return rows.map((r) => ({ key: r.userId, weight: percentToBasisPoints(String(r.share)) }));
-  const [m] = await tx.select({ reporterId: materials.reporterId }).from(materials).where(eq(materials.id, materialId));
-  return [{ key: m!.reporterId, weight: 1n }];
 }
 
 function licenseNumber(): string {

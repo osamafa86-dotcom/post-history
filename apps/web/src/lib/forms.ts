@@ -1,6 +1,8 @@
 import type { Field, Form, MaterialType, Permission, Values } from "./types";
 import { mayReadField } from "./privacy";
 import { dateTime, uuid } from "./query";
+import { formatDate, messages, type Locale } from "./i18n";
+import { numberLocale } from "./format";
 
 export type ValidationCode = "required" | "type" | "min_length" | "max_length" | "pattern" | "min" | "max" | "option" | "min_items" | "max_items" | "not_before" | "not_after" | "accept" | "max_size_bytes";
 export type ValidationResult = { valid: boolean; errors: { field: string; code: ValidationCode }[] };
@@ -69,9 +71,29 @@ function rule(field: Field, value: unknown): ValidationCode | null {
   }
 }
 
-export function validate(form: Form, type: FormTypes, values: Values, permissions: Permission[] = []): ValidationResult {
+/** ما لا يُملأ من الويب بعد (قرار المنسّق 2026-11-15): المرفق وعضو الطاقم يُرسمان معطّلين في الرفع، ولا تُرسل لهما قيمة. */
+export const webUnavailable = ["attachment", "staff_member"] as const satisfies readonly Field["type"][];
+
+/** الحقول الظاهرة الإلزامية التي لا يملؤها الويب: النموذج يسمّيها قبل الإرسال بدل أن يسقطها صامتًا. */
+export function unavailableRequired(form: Form, type: FormTypes, values: Values, permissions: Permission[] = [], unavailable: readonly Field["type"][] = []): Field[] {
+  return visibleFields(form, type, values, permissions).filter(field => field.required && unavailable.includes(field.type));
+}
+
+/** نص الخطأ بحدّه من قواعد الحقل («أقل عدد للأحرف: 2»)؛ بلا حدّ في القاعدة تبقى الجملة العامة. */
+export function errorText(field: Field, code: ValidationCode, locale: Locale): string {
+  const m = messages[locale], v = field.validation ?? {}, t = m.validationLimits, number = (value: number, digits = 0) => new Intl.NumberFormat(numberLocale(locale), { maximumFractionDigits: digits }).format(value);
+  const limit = code === "min_length" ? v.min_length : code === "max_length" ? v.max_length : code === "min" ? v.min : code === "max" ? v.max : code === "min_items" ? v.min_items : code === "max_items" ? v.max_items : undefined;
+  if (limit !== undefined && code in t) return t[code as keyof typeof t].replace("{n}", number(limit, 3));
+  if (code === "not_before" && v.not_before) return t.not_before.replace("{date}", formatDate(v.not_before, locale));
+  if (code === "not_after" && v.not_after) return t.not_after.replace("{date}", formatDate(v.not_after, locale));
+  if (code === "max_size_bytes" && v.max_size_bytes) return t.max_size_bytes.replace("{n}", number(v.max_size_bytes / 1048576, 1));
+  return m.validation[code];
+}
+
+export function validate(form: Form, type: FormTypes, values: Values, permissions: Permission[] = [], unavailable: readonly Field["type"][] = []): ValidationResult {
   const errors: ValidationResult["errors"] = [];
   for (const field of visibleFields(form, type, values, permissions)) {
+    if (unavailable.includes(field.type)) continue;
     const code = rule(field, values[field.key]);
     if (code) errors.push({ field: field.key, code });
   }

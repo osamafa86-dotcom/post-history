@@ -7,7 +7,7 @@ import { hasRole } from "@/lib/review";
 import { useMutation } from "@/lib/use-mutation";
 import { formatMoney } from "@/lib/store-format";
 import { currencies } from "@/lib/license-policy";
-import { cancellable, earnerRoles, payableStates, payoutCreate, type EarningsEntry, type EarningsSummary, type PayoutRequest } from "@/lib/earnings-policy";
+import { cancellable, earnerRoles, movements, payableStates, payoutCreate, twoDecimals, type EarningsEntry, type EarningsSummary, type PayoutRequest } from "@/lib/earnings-policy";
 import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
 import { Icon, type IconName } from "./icon";
@@ -34,7 +34,7 @@ export function SandboxBanner({ locale }: { locale: Locale }) {
 export function EarningsPage({ locale }: { locale: Locale }) {
   const m = messages[locale], t = m.earnings, me = useUser(), allowed = hasRole(me, ...earnerRoles), mutation = useMutation();
   const [summary, setSummary] = useState<EarningsSummary | null>(null), [payouts, setPayouts] = useState<PayoutRequest[] | null>(null), [error, setError] = useState(false), [attempt, setAttempt] = useState(0);
-  const [currency, setCurrency] = useState<Currency>("USD"), [amount, setAmount] = useState(""), [invalid, setInvalid] = useState(false);
+  const [currency, setCurrency] = useState<Currency>("USD"), [amount, setAmount] = useState(""), [invalid, setInvalid] = useState<boolean | "decimals">(false);
   useEffect(() => {
     if (!allowed) return;
     const controller = new AbortController(), signal = controller.signal;
@@ -45,8 +45,10 @@ export function EarningsPage({ locale }: { locale: Locale }) {
   }, [allowed, attempt]);
   if (!allowed) return <NoAccess locale={locale} me={me} title={t.title} denied={t.denied} />;
 
-  const balance = summary?.balances.find(b => b.currency === currency);
+  const balance = summary?.balances.find(b => b.currency === currency), short = !!balance && balance.requestable.amount_minor < balance.minimum.amount_minor;
   async function request() {
+    // ما زاد على منزلتين يُرفض بسببه، ولا يُقرَّب صامتًا قبل الإرسال
+    if (!twoDecimals(amount)) { setInvalid("decimals"); return; }
     const minor = Math.round(Number(amount) * 100), input = payoutCreate({ amount: { amount_minor: minor, currency }, channel: "sandbox" });
     if (!input || !balance || minor < balance.minimum.amount_minor || minor > balance.requestable.amount_minor) { setInvalid(true); return; }
     setInvalid(false);
@@ -69,9 +71,9 @@ export function EarningsPage({ locale }: { locale: Locale }) {
           <section className="card" aria-labelledby="payout-title"><h2 id="payout-title">{t.requestTitle}</h2><p className="caption">{t.sandbox}</p>
             {!summary.balances.length ? <p className="muted">{t.nothingToRequest}</p> : <form className="payout-form" noValidate onSubmit={e => { e.preventDefault(); void request(); }}>
               <div className="rule-row"><label>{t.currency}<select value={currency} onChange={e => setCurrency(e.target.value as Currency)}>{summary.balances.map(b => <option key={b.currency} value={b.currency}>{b.currency}</option>)}</select></label>
-                <label>{t.amount}<input type="number" min={0} step="0.01" dir="ltr" inputMode="decimal" value={amount} aria-invalid={invalid || undefined} aria-describedby="payout-limits" onChange={e => setAmount(e.target.value)} /></label></div>
-              {balance && <p className="muted" id="payout-limits" data-testid="payout-limits">{fillNodes(t.limits, { min: <Money price={balance.minimum} locale={locale} />, max: <Money price={balance.requestable} locale={locale} /> })}</p>}
-              {invalid && <p className="notice error" role="alert">{t.invalid}</p>}
+                <label>{t.amount}<input type="number" min={0} step="0.01" dir="ltr" inputMode="decimal" value={amount} aria-invalid={invalid ? true : undefined} aria-describedby="payout-limits" onChange={e => setAmount(e.target.value)} /></label></div>
+              {balance && <p className="muted" id="payout-limits" data-testid="payout-limits">{fillNodes(short ? t.belowMinimum : t.limits, { min: <Money price={balance.minimum} locale={locale} />, max: <Money price={balance.requestable} locale={locale} /> })}</p>}
+              {invalid && <p className="notice error" role="alert">{invalid === "decimals" ? t.twoDecimals : t.invalid}</p>}
               <ActionStatus status={mutation.status} locale={locale} />{mutation.status === 422 && <p className="notice error">{t.rejected}</p>}
               <div className="actions"><button disabled={mutation.busy || !amount}>{mutation.busy ? m.review.saving : t.request}</button></div>
             </form>}</section>
@@ -116,7 +118,12 @@ function Entries({ locale, attempt }: { locale: Locale; attempt: number }) {
       <label>{t.state}<select value={state} onChange={e => { setItems(null); setState(e.target.value as PayableState | ""); }}><option value="">{m.all}</option>{payableStates.map(s => <option key={s} value={s}>{t.payable[s]}</option>)}</select></label></div>
     {error ? <ErrorState locale={locale} testId="entries-error" title={t.entriesFailed} retry={() => { setError(false); setItems(null); setAgain(n => n + 1); }} /> : !items ? <><p className="visually-hidden" role="status">{m.loading}</p><span className="skeleton block" aria-hidden="true" /><span className="skeleton block" aria-hidden="true" /></> : !items.length ? <p className="muted">{t.noEntries}</p>
       : <><div className="list-table"><table><thead><tr>{[t.occurredAt, t.kind, t.state, t.amount].map(label => <th scope="col" key={label} className={label === t.amount ? "num" : undefined}>{label}</th>)}</tr></thead>
-        <tbody>{items.map(e => <tr key={e.id} data-testid="entry-row"><td data-label={t.occurredAt}>{formatDate(e.occurred_at, locale)}</td><td data-label={t.kind}>{t.kinds[e.kind]}</td><td data-label={t.state}>{t.payable[e.state]}</td><td data-label={t.amount} className="num"><bdi dir="ltr" className="ref">{formatMoney(e.amount, locale)}</bdi></td></tr>)}</tbody></table></div>
+        {/* سطر لكل حركة (قرار المنسّق 2026-11-15): البيعة بما بيع منها وحصتك من كل بند، والمعلّق بموعد تحريره، والنقل بين حالتين بوجهته ومصدره */}
+        <tbody>{movements(items).map(e => <tr key={e.entry_id} data-testid="entry-row"><td data-label={t.occurredAt}>{formatDate(e.occurred_at, locale)}</td>
+          <td data-label={t.kind}><span>{t.kinds[e.kind]}</span>{e.sale && <ul className="entry-sale" data-testid="entry-sale">{e.sale.items.map(i => <li key={i.material_id}><strong>{i.title}</strong> <small className="muted"><bdi dir="ltr" className="ref">{i.material_id.slice(0, 8)}</bdi>{m.shell.listSeparator}{m.store.licenseTypes[i.license_type]}{i.share && <>{m.shell.listSeparator}<bdi dir="ltr">{formatMoney(i.share, locale)}</bdi></>}</small></li>)}
+            <li className="muted"><small>{t.soldOn.replace("{date}", formatDate(e.sale.sold_at, locale))}</small></li></ul>}</td>
+          <td data-label={t.state}>{t.payable[e.state]}{e.from && <small className="muted"> {t.fromState.replace("{state}", t.payable[e.from])}</small>}{e.state === "pending" && e.releases_at && <small className="muted" data-testid="entry-release"> {t.releasesOn.replace("{date}", formatDate(e.releases_at, locale))}</small>}</td>
+          <td data-label={t.amount} className="num"><bdi dir="ltr" className="ref">{formatMoney(e.amount, locale)}</bdi></td></tr>)}</tbody></table></div>
         {cursor && <div className="pagination"><button className="secondary" onClick={() => void more()}>{m.next}</button></div>}</>}
   </section>;
 }

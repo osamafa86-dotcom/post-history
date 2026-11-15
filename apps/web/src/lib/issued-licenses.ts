@@ -28,14 +28,55 @@ export function safeLicense(l: IssuedLicense): IssuedLicense {
     valid_from: l.valid_from, valid_until: l.valid_until ?? null, exclusive_until: l.exclusive_until ?? null, issued_at: l.issued_at, delivery_ready: l.delivery_ready === true,
   };
 }
+/**
+ * ما تملكه المؤسسة ساريًا على إدراج (S2): رقم ترخيصها لكل قالب، ونهاية حصريتها هي عليه إن كانت قائمة. الساري ما حالته `active` ولم تمضِ نهايته
+ * (وإن لم يحدّث الخادم حالته بعد)؛ المُبطل والمنتهي وتراخيص الإدراجات الأخرى خارجه.
+ */
+export function heldOn(licenses: readonly IssuedLicense[], listingId: string, now: number): { numbers: Record<string, string>; exclusiveUntil: string | null } {
+  const numbers: Record<string, string> = {}; let exclusiveUntil: string | null = null;
+  for (const l of licenses) {
+    if (l.listing_id !== listingId || l.status !== "active" || (l.valid_until && Date.parse(l.valid_until) <= now)) continue;
+    numbers[l.license_template_id] ??= l.license_number;
+    if (l.exclusive_until && Date.parse(l.exclusive_until) > now && (!exclusiveUntil || l.exclusive_until > exclusiveUntil)) exclusiveUntil = l.exclusive_until;
+  }
+  return { numbers, exclusiveUntil };
+}
 /** رابط حزمة التسليم الموقّع: لا يُوجَّه المتصفح إلى أصل خارج أصول التخزين في الإعداد. */
 export function allowedDownload(value: unknown, origins: readonly string[]) {
   if (typeof value !== "string") return false;
   try { const url = new URL(value); return origins.includes(url.origin) && !url.username && !url.password; } catch { return false; }
 }
 
+/** من يقرأ عدد التراخيص الفاعلة على مادة قبل خروج حقوقها من `sellable` (حوار تحويل الحقوق، والمالية)؛ كما في `x-roles`. */
+export const activeLicenseReaders = ["system_admin", "editor_in_chief", "rights_officer", "finance"] as const satisfies readonly components["schemas"]["RoleName"][];
+export type ActiveLicenses = components["schemas"]["MaterialActiveLicenses"];
+/** العددان وحدهما، صحيحين غير سالبين؛ غير ذلك لا يُعرض. */
+export function safeActiveLicenses(value: ActiveLicenses): ActiveLicenses | null {
+  const count = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) >= 0;
+  return count(value?.active_licenses) && count(value?.organizations) ? { active_licenses: value.active_licenses, organizations: value.organizations } : null;
+}
+/** أسباب الإبطال التي يصفّي بها العقد قائمة التراخيص. */
+export const revokedReasons = ["refunded", "rights_withdrawn", "manual"] as const satisfies readonly NonNullable<IssuedLicense["revoked_reason"]>[];
+/** من يرى قائمة «أُبطلت لسبب حقوقي ولم تُسترد»: من يقرّر الاسترداد. */
+export const refundReviewers = ["system_admin", "finance"] as const satisfies readonly components["schemas"]["RoleName"][];
 /** صيغة رقم الترخيص كما في العقد؛ أي رقم آخر لا يُرسل إلى الخادم. */
 export const licenseNumberPattern = /^PH-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{10}$/;
+/**
+ * الرقم كما يكتبه قارئ من ورقة: بلا فراغات، بحروف كبيرة، بأرقام لاتينية وشرطة عادية، وبشرطتيه إن غابتا. والحروف التي لا يحملها الترميز
+ * (O وI وL) تُقرأ أرقامها (0 و1) كما في ترميز Crockford. ما لا يصير رقمًا بصيغة العقد يعود كما نُظِّف، فيرفضه النمط.
+ */
+export function normalizeLicenseNumber(value: string): string {
+  const latin = value.normalize("NFKC").replace(/[\u0660-\u0669]/g, d => String(d.charCodeAt(0) - 0x660)).replace(/[\u06f0-\u06f9]/g, d => String(d.charCodeAt(0) - 0x6f0));
+  const plain = latin.replace(/[\u2010-\u2015\u2212]/g, "-").replace(/\s+/g, "").toUpperCase();
+  const match = /^PH-?([0-9OIL]{4})-?([0-9A-Z]{10})$/.exec(plain);
+  if (!match) return plain;
+  const read = (part: string) => part.replace(/O/g, "0").replace(/[IL]/g, "1");
+  return `PH-${read(match[1])}-${read(match[2])}`;
+}
+/** مهلة تجهيز حزمة التسليم: بعدها يُقال للمشتري إن التجهيز تأخر وإلى من يتوجّه، بدل «عُد بعد قليل» بلا نهاية. */
+export const deliveryLateAfterMs = 15 * 60 * 1000;
+export const deliveryLate = (license: Pick<IssuedLicense, "status" | "delivery_ready" | "issued_at">, now: number) =>
+  license.status === "active" && !license.delivery_ready && now - Date.parse(license.issued_at) > deliveryLateAfterMs;
 export type PublicVerification = { license_number: string; status: IssuedLicense["status"]; valid_until: string | null };
 /**
  * صفحة التحقق العامة (P2): الحقول الثلاثة التي يغلق عليها العقد وحدها (#406 بعد قرار الأمن على #383): الرقم والحالة والنهاية، وإن أعاد الخادم
