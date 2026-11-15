@@ -1849,6 +1849,26 @@ VALUES ('00000000-0000-4000-8000-000000000013', 'auth.passkey_added', 'user', '0
         '{"recovery_request_id": "00000000-0000-4000-8000-000000000901", "reason_code": "forgot_password", "passkeys_revoked": "1"}', '\x00'),
        ('00000000-0000-4000-8000-000000000013', 'auth.recovery_codes_generated', 'user', '00000000-0000-4000-8000-000000000013',
         '{"target_user_id": "00000000-0000-4000-8000-000000000013", "codes_count": "10"}', '\x00');
+-- أحداث القرار على المادة (051): الرفض والقبول وإعادة الإرسال بحمولة أحداث المادة وحدها؛ السبب والعنوان لا يدخلان الحمولة
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload) VALUES
+  ('material.rejected', 'material', '00000000-0000-4000-8000-000000000101', 'material.rejected:smoke',
+   '{"material_id": "00000000-0000-4000-8000-000000000101", "priority": "normal"}'),
+  ('material.accepted', 'material', '00000000-0000-4000-8000-000000000101', 'material.accepted:smoke',
+   '{"material_id": "00000000-0000-4000-8000-000000000101", "priority": "normal"}'),
+  ('material.resubmitted', 'material', '00000000-0000-4000-8000-000000000101', 'material.resubmitted:smoke',
+   '{"material_id": "00000000-0000-4000-8000-000000000101", "priority": "normal"}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('material.rejected', 'material', '00000000-0000-4000-8000-000000000101', 'material.rejected:smoke:reason',
+          '{"material_id": "00000000-0000-4000-8000-000000000101", "priority": "normal", "reason": "x"}') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('material.resubmitted', 'material', '00000000-0000-4000-8000-000000000101', 'material.resubmitted:smoke:title',
+          '{"material_id": "00000000-0000-4000-8000-000000000101", "priority": "normal", "title": "x"}') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('material.withdrawn', 'material', '00000000-0000-4000-8000-000000000101', 'material.withdrawn:smoke',
+          '{"material_id": "00000000-0000-4000-8000-000000000101", "priority": "normal"}') $q$, '23514');
 SET CONSTRAINTS ALL DEFERRED;
 -- الدوال تعمل بمسار بحث فارغ (الاستعادة)
 SET LOCAL search_path = '';

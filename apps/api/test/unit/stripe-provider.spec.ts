@@ -54,6 +54,18 @@ describe('Stripe test-mode adapter', () => {
     expect((err as Error).message).not.toContain(KEY);
   });
 
+  it('cancelling expires the open session under its own idempotency key; a session with nothing to expire passes, another failure is raised', async () => {
+    const { calls, fetchImpl } = recorded({ 'POST /v1/checkout/sessions/cs_test_1/expire': { id: 'cs_test_1', status: 'expired' } });
+    const p = new StripeTestProvider(KEY, WHSEC, 'https://stripe.test', fetchImpl);
+    await p.cancelCheckout('cs_test_1');
+    expect(calls.map((c) => `${c.method} ${new URL(c.url).pathname}`)).toEqual(['POST /v1/checkout/sessions/cs_test_1/expire']);
+    expect(calls[0]!.headers['Idempotency-Key']).toBe('expire:cs_test_1');
+    // مجهولة أو مدفوعة أو منتهية: Stripe يرفض إنهاءها، ولا شيء يُبطَل
+    await expect(p.cancelCheckout('cs_unknown')).resolves.toBeUndefined();
+    const down = (async () => new Response(JSON.stringify({ error: { type: 'api_error' } }), { status: 500 })) as unknown as typeof fetch;
+    await expect(new StripeTestProvider(KEY, WHSEC, 'https://stripe.test', down).cancelCheckout('cs_test_1')).rejects.toThrow('stripe: 500 api_error');
+  });
+
   it('verifies Stripe-Signature before parsing: any v1, ±5 minutes, constant-time', () => {
     const body = evt('checkout.session.completed', { id: 'cs_test_1', payment_status: 'paid', amount_total: 100, currency: 'usd' });
     const good = stripeSignatureHeader(WHSEC, body, now);

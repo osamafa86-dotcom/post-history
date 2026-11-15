@@ -10,6 +10,7 @@ import { materialQuery, materialTypes, uuid } from "@/lib/query";
 import type { components } from "@/generated/schema";
 import type { MaterialType } from "@/lib/types";
 import { producedLink, streamDerivative } from "./media";
+import { listMaterials } from "./material-list";
 import { producedReaders } from "@/lib/assignment-policy";
 import { renderDownload, renderRead } from "./renders";
 import { assignmentPath, assignmentRead } from "./assignments";
@@ -174,7 +175,7 @@ async function respond(request: NextRequest, path: string, deps?: Deps): Promise
       if (path === "materials") {
         let query;
         try { query = materialQuery(request.nextUrl.searchParams); } catch { throw new WebError(400, "request_failed"); }
-        const page = requireOk(await api.GET("/materials", { params: { query } }));
+        const page = await listMaterials(api, query);
         return json({ items: page.items.map(m => safeMaterial(m, me.permissions, undefined, internalNames(me))), next_cursor: page.next_cursor });
       }
       const renders = /^materials\/([^/]+)\/renders$/.exec(path);

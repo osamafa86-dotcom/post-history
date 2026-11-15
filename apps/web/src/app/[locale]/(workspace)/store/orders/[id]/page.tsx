@@ -4,9 +4,9 @@ import { isLocale } from "@/lib/i18n";
 import { uuid } from "@/lib/query";
 import { pageMetadata } from "@/lib/page-titles";
 export const generateMetadata = pageMetadata("store/orders/[id]");
-// ?returned=1 يضعه رابط العودة من المزوّد؛ لا يؤكد الدفع، ويبدأ قراءة الطلب حتى يتغير.
+// ?returned=1 يضعه رابط العودة من المزوّد؛ لا يؤكد الدفع، ويبدأ قراءة الطلب حتى يتغير. و`outcome=failed` تلميح عرض: المشتري عاد بلا دفع، فلا انتظار.
 export default async function OrderRoute({ params, searchParams }: { params: Promise<{ locale: string; id: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { locale, id } = await params, query = await searchParams;
   if (!uuid.test(id)) notFound();
-  return <OrderPage locale={isLocale(locale) ? locale : "ar"} id={id} returned={query.returned === "1"} />;
+  return <OrderPage locale={isLocale(locale) ? locale : "ar"} id={id} returned={query.returned === "1"} failed={query.outcome === "failed"} />;
 }

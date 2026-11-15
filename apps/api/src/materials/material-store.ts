@@ -289,6 +289,17 @@ const SEMANTIC_EDITORIAL_EVENT: Record<string, OutboxEventType> = {
 };
 
 /**
+ * أحداث القرار على المادة (ADR 0121): الرفض من أي حالة، وقبول المشرف (لا إعادة المنتج المادة إلى «مقبولة»)، وإعادة المراسل إرسال مادته
+ * بعد طلب التعديل. تُكتب مع الحدث الدلالي إن وُجد، بالحمولة نفسها.
+ */
+export function decisionEvent(from: string, to: string): OutboxEventType | undefined {
+  if (to === 'rejected') return 'material.rejected';
+  if (from === 'reviewing' && to === 'accepted') return 'material.accepted';
+  if (from === 'needs_changes' && to === 'reviewing') return 'material.resubmitted';
+  return undefined;
+}
+
+/**
  * يطبّق انتقالًا مسموحًا (تحقق المستدعي من الجدول والمالك) داخل المعاملة: العمود، سجل الانتقال، وحدث Outbox
  * للمسار، وحدث دلالي للحالات التحريرية التي تطلق إشعارات. يعيد الصف بعد التحديث.
  */
@@ -338,13 +349,14 @@ export async function applyTransition(
     actorId: t.actorId,
     payload: { ...materialPayload(m), track: t.track, from, to: t.to, ...note },
   });
-  const semantic = t.track === 'editorial' ? SEMANTIC_EDITORIAL_EVENT[t.to] : undefined;
-  if (semantic) {
+  const semantic = t.track === 'editorial' ? [SEMANTIC_EDITORIAL_EVENT[t.to], decisionEvent(from, t.to)] : [];
+  for (const type of semantic) {
+    if (!type) continue;
     await writeOutboxEvent(tx, {
-      type: semantic,
+      type,
       aggregateType: 'material',
       aggregateId: m.id,
-      idempotencyKey: `${semantic}:${record!.id}`,
+      idempotencyKey: `${type}:${record!.id}`,
       actorId: t.actorId,
       payload: { ...materialPayload(m), editorial_state: t.to, material_version: updated!.version, ...note },
     });
