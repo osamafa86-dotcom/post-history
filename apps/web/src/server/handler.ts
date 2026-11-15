@@ -25,6 +25,7 @@ import { safeTemplate, templateRoles } from "@/lib/license-policy";
 import { listingReaders, safeListing } from "@/lib/listing-policy";
 import { listUploads, readUpload, uploadAction, uploadBodyLimit, uploadPath } from "./uploads";
 import { catalogRead } from "./catalog";
+import { materialEdit, materialEditPath } from "./material-edit";
 import { safeIdentitySetting, safePermissionHistory } from "@/lib/admin-privacy";
 import { pageLimits } from "@/lib/admin-policy";
 import { safeRule } from "@/lib/notification-policy";
@@ -83,10 +84,10 @@ async function respond(request: NextRequest, path: string, deps?: Deps): Promise
     const store = deps?.store ?? sessionStore(config), transport = deps?.fetch;
     const id = request.cookies.get(config.cookieName)?.value ?? "";
     const isPost = request.method === "POST";
-    const isWrite = ["POST", "PUT", "DELETE"].includes(request.method);
+    const isWrite = ["POST", "PUT", "DELETE", "PATCH"].includes(request.method);
     if (isWrite) assertSameOrigin(request, config);
     if (request.method !== "GET" && !isWrite) throw new WebError(405, "request_failed");
-    if (isWrite && !(isPost && ["auth/login", "auth/logout", "auth/recovery/complete", "auth/totp/confirm", "forms", ...publicAccountPaths].includes(path)) && !actionPath(path, request.method) && !uploadPath(path, request.method) && !accountWritePath(path, request.method)) throw new WebError(405, "request_failed");
+    if (isWrite && !(isPost && ["auth/login", "auth/logout", "auth/recovery/complete", "auth/totp/confirm", "forms", ...publicAccountPaths].includes(path)) && !actionPath(path, request.method) && !uploadPath(path, request.method) && !materialEditPath(path, request.method) && !accountWritePath(path, request.method)) throw new WebError(405, "request_failed");
 
     if (path === "auth/login" && isPost) {
       const input = await bodyOf(request);
@@ -122,6 +123,8 @@ async function respond(request: NextRequest, path: string, deps?: Deps): Promise
       }
       const me = requireOk(await api.GET("/auth/me"));
       if (path === "forms") return manageForms(request, api, me, isPost ? await bodyOf(request, formBodyLimit) : undefined);
+      // تعديل صاحب المادة لحقولها الوصفية (PATCH وحده)
+      if (materialEditPath(path, request.method)) return materialEdit(request, path, api, me, await bodyOf(request));
       if (isWrite && uploadPath(path, request.method)) return uploadAction(request, path, api, me, await bodyOf(request, uploadBodyLimit(path)), config!);
       // الرموز الاحتياطية ومفاتيح المرور ورابط إعادة التعيين واعتماد الاستعادة؛ رد المصادِق عند التسجيل أكبر من 8 KiB
       if (isWrite && accountWritePath(path, request.method)) return accountWrite(request, path, api, me, await bodyOf(request, path === "me/passkeys" ? 65536 : 8192));

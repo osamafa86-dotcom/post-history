@@ -37,7 +37,7 @@ const uploads = new Map<string, FixtureUpload>(), tusFiles = new Map<string, { s
 const ingestTokens = new Map<string, { sid: string; expires: number }>();
 const tusFaults = { failCreate: 0, rejectIngest: 0, failPatches: 0, cutNext: false, revoked: false };
 const webOrigin = process.env.WEB_ORIGIN ?? "http://127.0.0.1:3100", fixtureOrigin = `http://127.0.0.1:${process.env.WEB_FIXTURE_PORT ?? 3201}`;
-function resetUploads() { uploads.clear(); tusFiles.clear(); ingestTokens.clear(); Object.assign(tusFaults, { rejectIngest: 0, failPatches: 0, cutNext: false, revoked: false }); }
+function resetUploads() { uploads.clear(); tusFiles.clear(); ingestTokens.clear(); Object.assign(tusFaults, { failCreate: 0, rejectIngest: 0, failPatches: 0, cutNext: false, revoked: false }); }
 function finishUpload(upload: FixtureUpload, digest: string) {
   const item = materials.find(m => m.id === upload.session.material_id);
   if (digest !== upload.sha) { Object.assign(upload.session, { state: "failed", failure_reason: "checksum_mismatch" }); if (item) item.technical_state = "failed"; return; }
@@ -218,6 +218,8 @@ const server = createServer(async (req, res) => {
     res.statusCode = 302; res.setHeader("Location", `http://127.0.0.1:3100/${lang}/store/orders/${order.id}?returned=1`); res.end(); return;
   }
   if (url.pathname === "/__test/state") return send({ writes, applied: applied.size, identitySetting, auditCount: permissionAudit.length });
+  // مادة لصاحبها لم يصل ملفها (أُلغي رفعها أو لم يبدأ): بلا ملفات، والمسار الفني ينتظر.
+  if (url.pathname === "/__test/no-file" && req.method === "POST") { Object.assign(materials[3], { technical_state: "pending", files: [], thumbnail_file_id: null }); return send({ id: materials[3].id }); }
   if (url.pathname === "/__test/request-changes" && req.method === "POST") {
     // مادة بطلب تعديل وأخرى مرفوضة وثالثة فشل رفعها، وسبب داخلي لا يصل المراسل.
     const supervisor = "10000000-0000-4000-8000-000000000002", stamp = "2026-10-21T10:00:00Z";
@@ -282,7 +284,7 @@ const server = createServer(async (req, res) => {
     res.setHeader("Content-Length", end - start + 1); return res.end(bytes.subarray(start, end + 1));
   }
   let body: Record<string, unknown> = {};
-  if (["POST", "PUT", "DELETE"].includes(req.method ?? "")) {
+  if (["POST", "PUT", "DELETE", "PATCH"].includes(req.method ?? "")) {
     let raw = ""; for await (const chunk of req) { raw += chunk; if (raw.length > 65536) return send({}, 413); }
     try { body = JSON.parse(raw || "{}"); } catch { return send({}, 400); }
     if (!req.headers["idempotency-key"]) return send({ code: "missing_idempotency_key" }, 400);
@@ -337,7 +339,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/v1/auth/logout" && req.method === "POST") { if (body.all_sessions) { access.clear(); refresh.clear(); } else access.delete(token); return send(null, 204); }
   const user = access.get(token)!;
   if (url.pathname === "/v1/auth/me") return send(user);
-  const isWrite = ["POST", "PUT", "DELETE"].includes(req.method ?? "");
+  const isWrite = ["POST", "PUT", "DELETE", "PATCH"].includes(req.method ?? "");
   if (isWrite) {
     const path = decodeURIComponent(url.pathname), key = String(req.headers["idempotency-key"]), fingerprint = JSON.stringify([path, req.method, body]);
     writes.push({ path, method: req.method!, key, body });
@@ -369,6 +371,15 @@ const server = createServer(async (req, res) => {
       item.tags = [...tags]; item.row_version!++; item.updated_at = new Date().toISOString();
       res.setHeader("ETag", `"${item.row_version}"`); return commit(item, 200);
     }
+    // تعديل الحقول الوصفية (updateMaterial): صاحبها المراسل، و`If-Match` من row_version.
+    const edit = /^\/v1\/materials\/([^/]+)$/.exec(path);
+    if (edit && req.method === "PATCH") {
+      const item = materials.find(m => m.id === edit[1]); if (!item) return send({}, 404);
+      if (!(has("reporter") && item.reporter_id === user.user_id) && !has("supervisor", "editor_in_chief", "system_admin")) return send({}, 403);
+      if (req.headers["if-match"] !== `"${item.row_version}"`) return send({}, 412);
+      Object.assign(item, body, { updated_at: new Date().toISOString() }); item.row_version!++;
+      res.setHeader("ETag", `"${item.row_version}"`); return commit(item, 200);
+    }
     const match = /^\/v1\/materials\/([^/]+)\/(transitions|reservation|contributors)$/.exec(path);
     if (match) {
       const item = materials.find(m => m.id === match[1]); if (!item) return send({}, 404);
@@ -376,7 +387,9 @@ const server = createServer(async (req, res) => {
       const stamp = new Date().toISOString();
       if (match[2] === "transitions") {
         const track = body.track as "technical" | "editorial" | "rights", column = `${track}_state` as const;
-        if (track === "editorial" && !has("supervisor", "producer") || track === "rights" && !has("rights_officer") || track === "technical" && !has("reporter")) return send({}, 403);
+        // صاحب المادة يعيدها من «تحتاج تعديلًا» إلى المراجعة (`reporter_owner` في جدول الانتقالات)
+        const resubmits = track === "editorial" && has("reporter") && item.reporter_id === user.user_id && item.editorial_state === "needs_changes" && body.to === "reviewing";
+        if (track === "editorial" && !resubmits && !has("supervisor", "producer") || track === "rights" && !has("rights_officer") || track === "technical" && !has("reporter")) return send({}, 403);
         const from = item[column]; Object.assign(item, { [column]: body.to }); item.row_version!++;
         history.set(item.id, [...(history.get(item.id) ?? []), { id: randomUUID(), track, from, to: String(body.to), reason: String(body.reason), note_timecode_ms: typeof body.note_timecode_ms === "number" ? body.note_timecode_ms : null, actor_id: user.user_id, actor_name: has("reporter") ? null : "Synthetic staff", occurred_at: stamp }]);
         return commit(item, 200);
