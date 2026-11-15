@@ -78,16 +78,21 @@ async function openAccount(page: Page, locale: "ar" | "en" = "ar", name = target
 }
 test("administrator grants independent permissions and suspends with enum-only payload", async ({ page, request }) => {
   await login(page, "admin", "en"); await openAccount(page, "en");
-  for (const label of [en.admin.location, en.admin.source, en.admin.identity]) {
+  // الحال من آخر حدث في السجل: صلاحية الهوية ممنوحة (زرّها «سحب» وحده)، والأخريان غير ممنوحتين (زرّهما «منح» وحده)
+  const state = (label: string) => page.getByRole("article", { name: label, exact: true }).getByTestId("permission-state");
+  await expect(state(en.admin.identity)).toHaveText(en.admin.held); await expect(page.getByRole("article", { name: en.admin.identity, exact: true }).getByRole("button", { name: en.admin.grant, exact: true })).toHaveCount(0);
+  await expect(state(en.admin.location)).toHaveText(en.admin.notHeld); await expect(page.getByRole("article", { name: en.admin.location }).getByRole("button", { name: en.admin.revoke, exact: true })).toHaveCount(0);
+  for (const label of [en.admin.location, en.admin.source]) {
     await page.getByLabel(en.admin.reason, { exact: true }).fill("approved synthetic request"); await page.getByRole("article", { name: label }).getByRole("button", { name: en.admin.grant, exact: true }).click();
     await expect(page.getByRole("dialog")).toContainText(en.admin.grantEffect.replace("{name}", targetName).replace("{permission}", label));
     await page.getByRole("dialog").getByRole("button", { name: en.admin.confirm, exact: true }).click(); await expect(page.getByRole("dialog")).toHaveCount(0);
   }
+  await expect(state(en.admin.location)).toHaveText(en.admin.held);
   await page.getByRole("article", { name: en.admin.location }).getByRole("button", { name: en.admin.revoke, exact: true }).click(); await page.getByRole("dialog").getByRole("button", { name: en.admin.confirm, exact: true }).click(); await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("article", { name: en.admin.identity, exact: true }).getByRole("button", { name: en.admin.revoke, exact: true }).click(); await page.getByRole("dialog").getByRole("button", { name: en.admin.confirm, exact: true }).click(); await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: en.admin.suspend, exact: true }).click(); await expect(page.getByRole("dialog")).toContainText(en.admin.suspendEffect.replace("{name}", targetName)); await page.getByRole("dialog").getByRole("button", { name: en.admin.confirm, exact: true }).click(); await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByTestId("staff-status")).toHaveText(en.admin.statuses.suspended); await expect(page.getByRole("button", { name: en.admin.activate, exact: true })).toBeVisible();
-  const data = await (await request.get("http://127.0.0.1:3201/__test/state")).json(); expect(data.writes.map((r: { path: string }) => r.path.split("/").at(-1))).toEqual(["sensitive_location:read", "protected_source:read", "reporter_identity:read", "sensitive_location:read", "reporter_identity:read", "status"]); expect(data.writes[5].body).toEqual({ status: "suspended" });
+  const data = await (await request.get("http://127.0.0.1:3201/__test/state")).json(); expect(data.writes.map((r: { path: string }) => r.path.split("/").at(-1))).toEqual(["sensitive_location:read", "protected_source:read", "sensitive_location:read", "reporter_identity:read", "status"]); expect(data.writes[4].body).toEqual({ status: "suspended" });
   await page.screenshot({ path: ".artifacts/admin-en.png", fullPage: true });
 });
 test("fresh BFF roles block an administrator whose role was revoked while the page was open", async ({ page, request }) => {
@@ -180,7 +185,8 @@ test("ADR 0035 admin sets and clears staff work name and sees a safe 422", async
   const input = page.getByRole("textbox", { name: ar.admin.workName, exact: true }); await input.fill("Synthetic staff");
   const saved = page.waitForRequest(r => r.url().endsWith(`/users/${target}/work-name`) && r.method() === "PUT");
   await page.getByRole("button", { name: ar.admin.workNameSave }).click(); const request = await saved; expect(request.postDataJSON()).toEqual({ work_name: "Synthetic staff" }); expect(request.headers()["idempotency-key"]).toBeTruthy();
-  await expect(input).toHaveValue("");
+  // الحقل يبقى بما حُفظ، والرأس يتبعه
+  await expect(input).toHaveValue("Synthetic staff"); await expect(page.getByRole("heading", { level: 1 })).toHaveText("Synthetic staff");
   const cleared = page.waitForRequest(r => r.url().endsWith(`/users/${target}/work-name`) && r.method() === "PUT"); await page.getByRole("button", { name: ar.admin.workNameClear }).click(); expect((await cleared).postDataJSON()).toEqual({ work_name: null });
   await page.getByRole("button", { name: ar.admin.back }).click(); await openAccount(page, "ar", "مدير تجريبي ١");
   await input.fill("Rejected staff"); await page.getByRole("button", { name: ar.admin.workNameSave }).click(); await expect(page.getByRole("region", { name: ar.admin.workName, exact: true }).getByRole("alert")).toContainText(ar.admin.workNameRejected);

@@ -7,11 +7,12 @@ import { workName } from "@/lib/work-name";
 import { useMutation } from "@/lib/use-mutation";
 import { ActionStatus } from "./action-status";
 
-export function WorkNameEditor({ id, locale }: { id: string; locale: Locale }) {
-  const t = messages[locale].admin, mutation = useMutation(), [value, setValue] = useState("");
+export function WorkNameEditor({ id, locale, initial = null, onSaved }: { id: string; locale: Locale; initial?: string | null; onSaved?: (name: string | null) => void }) {
+  // الحقل يُفتح بالاسم الحالي، ويبقى بما حُفظ؛ والصفحة التي تحمله تتبع ما حُفظ (`onSaved`)
+  const t = messages[locale].admin, mutation = useMutation(), [value, setValue] = useState(initial ?? "");
   async function save(name: string | null) {
     if (!uuid.test(id)) return;
-    if (await mutation.run(JSON.stringify([id, name]), header => browserApi().PUT("/users/{id}/work-name", { params: { path: { id }, header }, body: { work_name: name } }))) setValue("");
+    if (await mutation.run(JSON.stringify([id, name]), header => browserApi().PUT("/users/{id}/work-name", { params: { path: { id }, header }, body: { work_name: name } }))) { setValue(name ?? ""); onSaved?.(name); }
   }
   return <section className="card" aria-labelledby="work-name-title"><h2 id="work-name-title">{t.workName}</h2><p className="muted">{t.workNameHelp}</p>
     <label>{t.workName}<input value={value} maxLength={80} autoComplete="off" disabled={mutation.busy} onChange={e => setValue(e.target.value)} /></label>

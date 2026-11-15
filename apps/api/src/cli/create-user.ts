@@ -1,7 +1,7 @@
 /**
  * إنشاء حساب على مضيف حقيقي (identity/create-user.ts، ADR 0030).
  *
- *   node dist/cli/create-user.js --email <e> --role <role> [--scope-kind all|office|governorate --scope-id <id>] [--office <officeId>]
+ *   node dist/cli/create-user.js --email <e> --role <role> [--scope-kind all|office|governorate --scope-id <id>] [--office <officeId>] [--work-name <اسم العمل>]
  *        --mode one-admin --approver <adminId>                 أي دور غير مدير النظام
  *        --mode two-admins --approver <adminId> --approver <adminId>   مدير نظام
  *        --mode vault --approver <adminOrChiefId>              مدير نظام (رمز الخزنة + شخص ثانٍ)
@@ -38,6 +38,7 @@ export function parseCreateUserCliArgs(argv: string[]): CreateUserCliArgs {
       'scope-kind': { type: 'string' },
       'scope-id': { type: 'string' },
       office: { type: 'string' },
+      'work-name': { type: 'string' },
       mode: { type: 'string' },
       approver: { type: 'string', multiple: true },
     },
@@ -50,6 +51,11 @@ export function parseCreateUserCliArgs(argv: string[]): CreateUserCliArgs {
   const scopeKind = (values['scope-kind'] ?? 'all') as NewUser['scopeKind'];
   if (!['all', 'office', 'governorate'].includes(scopeKind)) throw new Error('--scope-kind must be all, office or governorate');
   if (values.office !== undefined && !UUID.test(values.office)) throw new Error('--office must be an office id');
+  // اسم العمل بقاعدة العمود: 1 إلى 80 حرفًا، بلا مسافة في طرفيه ولا محارف تحكم أو اتجاه
+  const workName = values['work-name'];
+  if (workName !== undefined && (workName.length < 1 || Array.from(workName).length > 80 || workName !== workName.trim() || /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/.test(workName))) {
+    throw new Error('--work-name must be 1 to 80 characters with no leading or trailing space and no control characters');
+  }
   const approverIds = values.approver ?? [];
   if (approverIds.length !== APPROVERS[mode] || !approverIds.every((id) => UUID.test(id))) {
     throw new Error(`--mode ${values.mode} takes ${APPROVERS[mode]} --approver user id(s)`);
@@ -60,6 +66,7 @@ export function parseCreateUserCliArgs(argv: string[]): CreateUserCliArgs {
     scopeKind,
     scopeId: values['scope-id'] ?? '',
     ...(values.office ? { officeId: values.office } : {}),
+    ...(workName !== undefined ? { workName } : {}),
     mode,
     approverIds,
   };

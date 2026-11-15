@@ -16,6 +16,8 @@ export interface NewUser {
   scopeKind: 'all' | 'office' | 'governorate';
   scopeId: string;
   officeId?: string;
+  /** اسم العمل الداخلي (ADR 0035) عند الإنشاء؛ بقاعدة العمود `users_work_name_format`. لحسابات الطاقم والمراسلين، لا المشترين. */
+  workName?: string;
 }
 
 export type CreateUserInput = NewUser &
@@ -61,6 +63,7 @@ export async function createUser(
           passwordHash,
           status: 'active',
           officeId: input.officeId ?? null,
+          workName: input.workName ?? null,
           credentialResetRequired: true,
         })
         .returning({ id: users.id });

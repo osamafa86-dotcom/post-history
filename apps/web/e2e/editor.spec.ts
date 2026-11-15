@@ -50,7 +50,9 @@ test("state cards filter the timeline by their track", async ({ page }) => {
 test("notifications are compact, sectioned and navigable with j/k", async ({ page }) => {
   await login(page); await page.getByRole("link", { name: ar.notice.title, exact: true }).click();
   const rows = page.getByTestId("notification"); await expect(rows).toHaveCount(3);
-  await rows.first().focus(); await page.keyboard.press("j"); await expect(rows.nth(1)).toHaveClass(/selected/);
+  // البند زرّ حقيقي يقرؤه قارئ الشاشة: التركيز عليه، وj/k ينقلان بين الأزرار
+  await expect(rows.first().locator("button.notice-open")).toHaveAttribute("aria-pressed", "false");
+  await rows.first().locator("button.notice-open").focus(); await page.keyboard.press("j"); await expect(rows.nth(1)).toHaveClass(/selected/); await expect(rows.nth(1).locator("button.notice-open")).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator(".notification-preview-panel")).not.toContainText(ar.notice.choose);
   await page.getByRole("button", { name: ar.notice.readAll }).click(); await expect(page.getByRole("button", { name: ar.notice.readAll })).toBeDisabled();
 });

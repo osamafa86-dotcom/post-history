@@ -70,7 +70,8 @@ describe('account creation on a real host (cli:create-user, ADR 0030)', () => {
 
   it('the setup code expires: after 24 hours it no longer sets a password', async () => {
     const admin = await person('system_admin');
-    const done = await createUser(db, deps(), { email: email(), role: 'producer', scopeKind: 'all', scopeId: '', mode: 'one_admin', approver: { userId: admin.id, totp: code(admin) } });
+    const done = await createUser(db, deps(), { email: email(), role: 'producer', scopeKind: 'all', scopeId: '', workName: 'مونتير المساء', mode: 'one_admin', approver: { userId: admin.id, totp: code(admin) } });
+    expect((await h.pool.query(`SELECT work_name FROM users WHERE id = $1`, [done.userId])).rows[0].work_name).toBe('مونتير المساء');
     await h.pool.query(`UPDATE recovery_requests SET reset_token_expires_at = decided_at, expires_at = decided_at WHERE user_id = $1`, [done.userId]);
     await request(h.app.getHttpServer()).post('/v1/auth/recovery/complete').send({ reset_token: done.setupToken, new_password: 'a-long-enough-password' }).expect(401);
   });
@@ -127,6 +128,11 @@ describe('account creation on a real host (cli:create-user, ADR 0030)', () => {
     });
     expect(() => parseCreateUserCliArgs(['--email', 'a@b.org', '--role', 'system_admin', '--mode', 'two-admins', '--approver', id])).toThrow(/2 --approver/);
     expect(() => parseCreateUserCliArgs(['--email', 'a@b.org', '--role', 'system_admin', '--mode', 'bootstrap', '--approver', id])).toThrow(/0 --approver/);
+    // اسم العمل عند الإنشاء: يظهر في القوائم والسجل بدل «حساب <أول 8>»
+    expect(parseCreateUserCliArgs(['--email', 'a@b.org', '--role', 'producer', '--work-name', 'مونتير المساء', '--mode', 'one-admin', '--approver', id])).toMatchObject({ workName: 'مونتير المساء' });
+    for (const bad of [' padded ', '', 'x'.repeat(81), 'a\u202eb']) {
+      expect(() => parseCreateUserCliArgs(['--email', 'a@b.org', '--role', 'producer', '--work-name', bad, '--mode', 'one-admin', '--approver', id])).toThrow(/--work-name/);
+    }
     expect(() => parseCreateUserCliArgs(['--email', 'a@b.org', '--role', 'reporter', '--mode', 'root'])).toThrow(/--mode/);
     expect(() => parseCreateUserCliArgs(['--email', 'a@b.org', '--role', 'reporter', '--mode', 'one-admin', '--approver', id, '--password', 'x'])).toThrow();
   });

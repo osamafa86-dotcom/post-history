@@ -6,7 +6,7 @@ import { APP_CONFIG, type AppConfig, fieldKeyring } from '../config/config';
 import { base32Encode, type FieldKeyring, randomToken, sha256 } from '../common/crypto';
 import { ApiError } from '../common/errors';
 import { DB, type Database } from '../database/database.module';
-import { recoveryRequests, userPermissions, userRoles, users } from '../database/schema/schema';
+import { platformSettings, recoveryRequests, userPermissions, userRoles, users } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import { CredentialAttempts } from './credential-attempts';
 import type { RateLimiter } from './rate-limiter';
@@ -235,11 +235,14 @@ export class AuthService {
     // كلمة مرور جديدة: فشل ما قبلها لا يبقى عائقًا لصاحب الحساب في تأكيد TOTP ولا في الدخول بعده
     await this.attempts.succeeded(done.userId, done.userId);
     const secretBase32 = base32Encode(secret);
+    // اسم الجهة كما يظهر في تطبيق المصادقة: اسم المنصة من إعداداتها (بلا النقطتين اللتين تفصلان الجهة عن الحساب)، وإلا الاسم الثابت
+    const [platform] = await this.db.select({ name: platformSettings.platformName }).from(platformSettings).limit(1);
+    const issuer = platform?.name.replaceAll(':', ' ').trim() || TOTP_ISSUER;
     return {
       session: await this.toSession(done.userId, done.issued),
       totp_enrollment: {
         secret_base32: secretBase32,
-        otpauth_uri: `otpauth://totp/${encodeURIComponent(`${TOTP_ISSUER}:${done.email}`)}?secret=${secretBase32}&issuer=${encodeURIComponent(TOTP_ISSUER)}&algorithm=SHA1&digits=6&period=30`,
+        otpauth_uri: `otpauth://totp/${encodeURIComponent(`${issuer}:${done.email}`)}?secret=${secretBase32}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`,
       },
     };
   }
