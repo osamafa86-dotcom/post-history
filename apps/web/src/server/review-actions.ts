@@ -64,6 +64,9 @@ export const actionRoutes = [
   { path: "/tag-suggestions", methods: ["put"] },
   { path: "/tag-rewrites", methods: ["post"] },
   { path: "/platform-settings", methods: ["put"] },
+  // إدارة الطاقم (ADR 0122)
+  { path: "/offices", methods: ["post"] },
+  { path: "/users", methods: ["post"] },
   { path: "/users/{id}/roles", methods: ["put"] },
   { path: "/buyer-organizations/{org_id}/rejection", methods: ["post"] },
   { path: "/materials/{id}/tags", methods: ["put"] },

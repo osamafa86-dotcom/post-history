@@ -15,6 +15,8 @@ import { ActionStatus } from "./action-status";
 import { Avatar, ConfirmDialog, ToneBadge, relativeTime, useDebounced } from "./admin-parts";
 import { Icon, type IconName } from "./icon";
 import { WorkNameEditor } from "./work-name-editor";
+import { StaffManagement } from "./staff-create";
+import { staffCreators } from "@/lib/staff-policy";
 import { PermissionHistory } from "./permission-history";
 import { OneTimeLink } from "./one-time-link";
 import { resetLinkFor, resetLinkIssuers, resetReasons, type PasswordResetLink, type ResetReason } from "@/lib/recovery-policy";
@@ -32,7 +34,7 @@ export function UsersAdmin({ locale }: { locale: Locale }) {
   const m = messages[locale], t = m.admin, me = useUser(), allowed = hasRole(me, ...staffReaders);
   const [filter, setFilter] = useState<Filter>("all"), [search, setSearch] = useState(""), q = useDebounced(cleanText(search).slice(0, 400), 300);
   const [page, setPage] = useState<StaffUserPage | null>(null), [extra, setExtra] = useState<StaffUser[]>([]), [cursor, setCursor] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false), [more, setMore] = useState(false), [attempt, setAttempt] = useState(0), [selected, setSelected] = useState<StaffUser | null>(null);
+  const [failed, setFailed] = useState(false), [more, setMore] = useState(false), [attempt, setAttempt] = useState(0), [selected, setSelected] = useState<StaffUser | null>(null), [notice, setNotice] = useState("");
   const valid = !q || Array.from(q).length <= staffLimits.q;
   const query = { limit: staffLimits.page, ...(filter === "suspended" ? { status: "suspended" as const } : filter !== "all" ? { role: [filter] } : {}), ...(q && valid ? { q } : {}) };
   const key = JSON.stringify(query);
@@ -45,7 +47,7 @@ export function UsersAdmin({ locale }: { locale: Locale }) {
     return () => controller.abort();
   }, [allowed, key, attempt, selected, valid]);
   if (!allowed) return <NoAccess locale={locale} me={me} title={t.title} denied={t.denied} />;
-  if (selected) return <AccountView key={selected.id} user={selected} locale={locale} onBack={() => { setSelected(null); setAttempt(n => n + 1); }} />;
+  if (selected) return <>{notice && <p className="notice good" role="status" data-testid="account-created">{notice}</p>}<AccountView key={selected.id} user={selected} locale={locale} onBack={() => { setSelected(null); setNotice(""); setAttempt(n => n + 1); }} /></>;
   async function loadMore() {
     if (!cursor) return; setMore(true);
     try { const data = dataOrThrow(await browserApi().GET("/users", { params: { query: { ...JSON.parse(key), cursor } } })); setExtra(old => [...old, ...data.items]); setCursor(data.next_cursor); }
@@ -58,6 +60,7 @@ export function UsersAdmin({ locale }: { locale: Locale }) {
   return <>
     <div className="page-head"><div><h1>{t.title}</h1><p className="muted" data-testid="staff-summary">{line ?? <span className="skeleton line" aria-hidden="true" />}</p></div></div>
     <p className="caption admin-note"><Icon name="key" size={14} /> {t.createNote}</p>
+    {hasRole(me, ...staffCreators) && <StaffManagement locale={locale} onCreated={user => { setNotice(t.create.done); setSelected(user); }} />}
     <div className="admin-toolbar">
       <form role="search" className="admin-search" onSubmit={event => event.preventDefault()}>
         <label htmlFor="staff-search" className="visually-hidden">{t.searchLabel}</label>
