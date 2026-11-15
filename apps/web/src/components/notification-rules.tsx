@@ -60,8 +60,8 @@ export function NotificationRules({ locale }: { locale: Locale }) {
       : error ? <ErrorState locale={locale} testId="rules-error" title={t.loadFailed} retry={() => setAttempt(n => n + 1)} />
       : !rules ? <p className="center-state" role="status">{m.loading}</p>
       : !rules.length ? <EmptyState icon="rules" testId="rules-empty" title={t.emptyTitle} actions={admin ? <button type="button" onClick={() => { mutation.clearStatus(); setInvalid(false); setDraft({ id: null, tag: null, rule: emptyRule() }); }}>{t.new}</button> : null}><p>{admin ? t.emptyBody : t.emptyReadOnly}</p></EmptyState>
-      : <div className="table-panel"><div className="table-scroll"><table><thead><tr>{[t.name, t.event, t.channels, t.levels, t.enabled, ""].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
-        <tbody>{rules.map(rule => <tr key={rule.id} data-testid="rule-row"><td>{rule.name}</td><td>{t.events[rule.event_type]}</td><td>{rule.channels.map(c => t.channelNames[c]).join(" · ")}</td><td>{rule.escalation?.length ?? 0}</td><td><span className={`badge ${rule.enabled ? "good" : ""}`}>{rule.enabled ? t.enabled : t.disabled}</span></td>
+      : <div className="table-panel"><div className="table-scroll"><table className="rules-table"><thead><tr>{[t.name, t.event, t.channels, t.levels, t.enabled, ""].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+        <tbody>{rules.map(rule => <tr key={rule.id} data-testid="rule-row"><td data-label={t.name}>{rule.name}</td><td data-label={t.event}>{t.events[rule.event_type]}</td><td data-label={t.channels}>{rule.channels.map(c => t.channelNames[c]).join(" · ")}</td><td data-label={t.levels}>{rule.escalation?.length ?? 0}</td><td data-label={t.enabled}><span className={`badge ${rule.enabled ? "good" : ""}`}>{rule.enabled ? t.enabled : t.disabled}</span></td>
           <td>{admin && <div className="actions"><button className="secondary" onClick={() => void open(rule)}>{t.edit}</button><button className="quiet" onClick={() => { mutation.clearStatus(); setRemoving(rule); }}>{t.delete}</button></div>}</td></tr>)}</tbody></table></div></div>}
     {!draft && <DefaultRouting locale={locale} />}
     {removing && <dialog className="modal" ref={node => { if (node && !node.open) node.showModal(); }} aria-labelledby="delete-rule-title" onCancel={event => { if (mutation.busy) event.preventDefault(); else setRemoving(null); }}><h2 id="delete-rule-title">{t.delete}</h2><p>{t.confirmDelete}</p><p><strong>{removing.name}</strong></p>
@@ -79,7 +79,7 @@ function Checks<T extends string>({ legend, values, selected, label, change, nam
 function DefaultRouting({ locale }: { locale: Locale }) {
   const t = messages[locale].rules, d = t.defaults;
   return <section className="default-routing" aria-labelledby="default-routing-title" data-testid="default-routing"><h2 id="default-routing-title">{d.title}</h2><p className="muted">{d.lead}</p>
-    <div className="table-panel"><div className="table-scroll"><table><thead><tr>{[d.event, d.audience, d.kind].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+    <div className="table-panel"><div className="table-scroll"><table className="rules-table"><thead><tr>{[d.event, d.audience, d.kind].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
       <tbody>{defaultFanout.map(row => <tr key={row.event} data-testid="default-row"><td data-label={d.event}>{(d.events as Record<string, string>)[row.event]}</td><td data-label={d.audience}>{d.audiences[row.audience]}</td>
         <td data-label={d.kind}>{row.task ? d.task : d.news}{!row.ruleable && <> · <span className="muted">{d.fixed}</span></>}</td></tr>)}</tbody></table></div></div></section>;
 }

@@ -37,13 +37,13 @@ export function Notifications({ locale }: { locale: Locale }) {
     // إقرار المجموعة وقراءتها موضعيًا؛ القراءة العامة تستخدم read-all وحده.
     const targets = group.items.filter(n => action === "ack" ? asksAck(n) : state(n) === "unread");
     for (const n of targets) if (!await mutation.run(`${n.id}:${action}`, header => action === "read" ? browserApi().POST("/notifications/{id}/read", { params: { path: { id: n.id }, header } }) : browserApi().POST("/notifications/{id}/ack", { params: { path: { id: n.id }, header } }))) break;
-    setAttempt(n => n + 1);
+    setAttempt(n => n + 1); window.dispatchEvent(new Event("notifications-read"));
   }
   async function readAll() {
     if (!checkedAt) return;
     const before = bulkBefore.current ?? new Date(checkedAt).toISOString(); bulkBefore.current = before;
     if (await mutation.run(`read-all:${before}`, header => browserApi().POST("/notifications/read-all", { params: { header }, body: { before } }))) {
-      bulkBefore.current = null; setAttempt(n => n + 1);
+      bulkBefore.current = null; setAttempt(n => n + 1); window.dispatchEvent(new Event("notifications-read"));
     }
   }
   const visibleItems = data ? data.items.filter(n => inTab(n, tab)) : [], sections = data ? groupNotifications(visibleItems, checkedAt) : [], groups = sections.flatMap(s => s.groups), current = groups.find(g => g.key === selected) ?? null;
@@ -85,6 +85,7 @@ export function Notifications({ locale }: { locale: Locale }) {
             </li>; })}</ul></li>)}</ul>
         <aside className="card notification-preview-panel" aria-live="polite" aria-label={t.previewTitle}>{current ? <>
           {current.needsAck && <p className="alert urgent">{t.needsAck}</p>}<p><strong>{b.kinds[notificationKind(current.head).word]}</strong></p>{titleOf(current.head) && <p><bdi>{titleOf(current.head)}</bdi></p>}
+          {notificationKind(current.head).word === "escalated" && !hasRole(me, "supervisor") && <p className="notice" data-testid="escalated-help">{t.escalatedHelp}</p>}
           <p>{formatDate(current.head.created_at, locale)}{current.items.length > 1 && <> · {plural(current.items.length, t.grouped, locale)}</>}</p>
           <div className="actions">{notificationTarget(current.head, locale) && <Link prefetch={false} className="button secondary" href={notificationTarget(current.head, locale)!}>{current.head.assignment_id ? t.openTask : !current.head.material_id && current.head.recovery_request_id ? t.openRequest : t.open}</Link>}
             {current.items.some(asksAck) && <button disabled={mutation.busy} onClick={() => void change(current, "ack")}>{t.ack}</button>}</div>

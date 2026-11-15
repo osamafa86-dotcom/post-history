@@ -26,17 +26,18 @@ test("review changes one track and displays a safe state history", async ({ page
   await expect(page.locator(".state-grid [data-track='editorial_state']")).toHaveText(ar.states.editorial_state.acknowledged);
   await expect(page.locator(".state-grid [data-track='technical_state']")).toHaveText(ar.states.technical_state.verified);
   await expect(page.locator(".state-grid [data-track='rights_state']")).toHaveText(ar.states.rights_state.unknown);
-  await expect(page.locator(".history-list li")).toHaveCount(1); await expect(page.locator(".history-list")).not.toContainText("synthetic review reason");
+  await expect(page.locator(".history-list li")).toHaveCount(1); await expect(page.locator(".history-list")).toContainText("synthetic review reason"); await expect(page.locator(".history-list")).toContainText(ar.material.actorYou);
   await choose(page, "documented", "rights checked", "rights"); await confirm(page).click();
   await expect(page.locator(".state-grid [data-track='rights_state']")).toHaveText(ar.states.rights_state.documented);
   await page.screenshot({ path: ".artifacts/review-ar.png", fullPage: true });
 });
-test("412 preserves the draft, blocks resubmission and requires explicit reload", async ({ page, request }) => {
+test("412 preserves the draft, blocks resubmission, and an explicit reload brings the dialog back with it", async ({ page, request }) => {
   await login(page); await detail(page); await choose(page, "acknowledged", "keep this draft");
   await request.post("http://127.0.0.1:3201/__test/bump"); await confirm(page).click();
   await expect(page.getByText(ar.review.changed, { exact: true })).toBeVisible(); await expect(page.getByRole("dialog").getByLabel(ar.review.reason, { exact: true })).toHaveValue("keep this draft"); await expect(confirm(page)).toBeDisabled();
-  await page.getByRole("button", { name: ar.review.reloadChanges, exact: true }).click(); await expect(page.getByRole("dialog")).toHaveCount(0);
-  await choose(page, "acknowledged", "reviewed updated revision"); await confirm(page).click();
+  await page.getByRole("button", { name: ar.review.reloadChanges, exact: true }).click();
+  await expect(page.getByText(ar.review.changed, { exact: true })).toHaveCount(0); await expect(page.getByRole("dialog").getByLabel(ar.review.reason, { exact: true })).toHaveValue("keep this draft");
+  await expect(confirm(page)).toBeEnabled(); await confirm(page).click();
   await expect(page.locator(".state-grid [data-track='editorial_state']")).toHaveText(ar.states.editorial_state.acknowledged);
 });
 test("unknown write result retries the same key and duplicate clicks apply once", async ({ page, request }) => {

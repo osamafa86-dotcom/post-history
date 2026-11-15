@@ -238,6 +238,9 @@
     "previewTitle": "What the reporter receives",
     "previewText": "Your material moved to “{state}”.",
     "reasonStays": "The reason for this transition is kept in the material's history and is not sent to the reporter.",
+    "sensitivePublish": "This material is flagged as sensitive: {flags}. Make sure it is blurred before publishing.",
+    "sensitiveConfirm": "I have checked that what must be blurred is blurred in the version to be published",
+    "publishNoProduced": "This material has no verified produced version. Publishing is allowed, and it enters the ready archive without a produced version.",
     "confirmTo": "Confirm: {state}",
     "confirmReject": "Confirm rejection for good",
     "rejectHelp": "Rejection sends the material to the internal archive; press again within five seconds to confirm.",
@@ -543,6 +546,7 @@
     "choose": "Choose an alert to preview it.",
     "openTask": "Open task",
     "openRequest": "Open the request",
+    "escalatedHelp": "The supervisor of its office did not receive this urgent material in time. Only the office supervisor can receive it: contact the office supervisor.",
     "tabsLabel": "Filter notifications",
     "pageTabs": {
       "all": "All",
@@ -2044,6 +2048,8 @@
     "allTracks": "Show all tracks",
     "system": "System",
     "neutralActor": "Internal actor or system",
+    "actorYou": "You",
+    "systemActor": "System",
     "loadFailed": "The material could not be loaded"
   },
   "trackLine": {
@@ -2387,7 +2393,7 @@
       "breadcrumb": "Breadcrumb",
       "shot": "Shot",
       "sensitivity": "Sensitivity",
-      "sensitiveRule": "processed locally, never published or sent to an external provider.",
+      "sensitiveRule": "processed locally, never sent to an external provider and never offered for sale.",
       "notSensitive": "no minors, injured people or graphic scenes flagged.",
       "sensitivityUnknown": "Unknown",
       "unknownRule": "treat as sensitive until known.",
@@ -2635,7 +2641,11 @@
       "effectWithout": "The task will be delivered without a file: whoever assigned it is told, and a delivered task is not returned.",
       "fileLabel": "Produced file"
     },
-    "backToTasks": "Back to my tasks"
+    "backToTasks": "Back to my tasks",
+    "next": {
+      "working": "Reserve the material from its page so it stays yours while you work, then upload the version and deliver the task.",
+      "delivered": "The task is delivered and the material keeps its state. Next: open the material and move it to “Final review” so it reaches the editor in chief; reserve it first if it is not reserved for you."
+    }
   },
   "assign": {
     "action": "Assign to editor",
@@ -2677,6 +2687,7 @@
     "cardTitle": "Video editor",
     "cardNone": "Not assigned to an editor yet.",
     "cardNoneReader": "No open task on this material.",
+    "cardDone": "{name} delivered the task.",
     "cardCurrent": "{state} · {name}",
     "cardLast": "Last task: {state} {time}"
   },

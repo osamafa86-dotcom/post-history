@@ -5,7 +5,7 @@ import { WebError } from "./errors";
 import { sessionStore, validSessionId, type SessionStore } from "./sessions";
 import { newRequestId, withRequestId } from "./request-id";
 import { internalNames } from "@/lib/work-name";
-import { safeDashboard, safeForm, safeMaterial, safeMe, safeNotification, safeTransition, reporterNote } from "@/lib/privacy";
+import { historyRecord, safeDashboard, safeForm, safeMaterial, safeMe, safeNotification } from "@/lib/privacy";
 import { materialQuery, materialTypes, uuid } from "@/lib/query";
 import type { components } from "@/generated/schema";
 import type { MaterialType } from "@/lib/types";
@@ -201,9 +201,9 @@ async function respond(request: NextRequest, path: string, deps?: Deps): Promise
       const history = /^materials\/([^/]+)\/transitions$/.exec(path);
       if (history && uuid.test(history[1])) {
         const data = requireOk(await api.GET("/materials/{id}/transitions", { params: { path: { id: history[1] } } }));
-        // ملاحظة المشرف لصاحب المادة وحده؛ وغيره يرى الانتقالات بلا سبب كما كان.
-        const owner = hasRole(me, "reporter") && requireOk(await api.GET("/materials/{id}", { params: { path: { id: history[1] } } })).reporter_id === me.user_id;
-        return json({ items: data.items.map(item => owner ? reporterNote(item) : safeTransition(item, internalNames(me))) });
+        // السبب للطاقم الذي يقرأ المادة، ولصاحبها ما كان يصله وما كتبه هو (`historyRecord`)؛ الخادم ردّ من لا يقرؤها قبل هذا السطر.
+        const staff = internalNames(me), owner = !staff && hasRole(me, "reporter") && requireOk(await api.GET("/materials/{id}", { params: { path: { id: history[1] } } })).reporter_id === me.user_id;
+        return json({ items: data.items.map(item => historyRecord(item, { id: me.user_id, staff, owner })) });
       }
       if (path === "catalog" || path.startsWith("catalog/")) return catalogRead(request, path, api, me, config!, transport);
       if (path === "uploads") return listUploads(api, me, request.nextUrl.searchParams);

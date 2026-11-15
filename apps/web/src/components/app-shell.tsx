@@ -69,13 +69,13 @@ function useDismiss(open: boolean, close: () => void) {
 }
 
 /**
- * عدد غير المقروء على الجرس، من `unread_count` في رد التنبيهات: يُسأل كل نصف دقيقة والتبويب ظاهر، وعند إغلاق اللوحة (قد قُرئ فيها شيء).
+ * عدد غير المقروء على الجرس، من `unread_count` في رد التنبيهات: يُسأل كل نصف دقيقة والتبويب ظاهر، وفور قراءة تنبيه أو إقراره (`notifications-read`).
  * تعذّر الطلب يُبقي آخر عدد.
  */
-function useUnreadCount(enabled: boolean, panelOpen: boolean) {
+function useUnreadCount(enabled: boolean) {
   const [count, setCount] = useState(0);
   useEffect(() => {
-    if (!enabled || panelOpen) return;
+    if (!enabled) return;
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
     async function poll() {
       await untilVisible(controller.signal); if (controller.signal.aborted) return;
@@ -83,8 +83,10 @@ function useUnreadCount(enabled: boolean, panelOpen: boolean) {
       catch { /* يبقى آخر عدد */ }
       finally { if (!controller.signal.aborted) timer = setTimeout(poll, 30000); }
     }
-    void poll(); return () => { controller.abort(); clearTimeout(timer); };
-  }, [enabled, panelOpen]);
+    const changed = () => { clearTimeout(timer); void poll(); };
+    window.addEventListener("notifications-read", changed); void poll();
+    return () => { controller.abort(); clearTimeout(timer); window.removeEventListener("notifications-read", changed); };
+  }, [enabled]);
   return count;
 }
 
@@ -107,7 +109,7 @@ export function AccountActions({ me, locale, languageHref, busy, logout, logoutA
 export function ShellTopBar({ me, locale, buyer, items, inboxHref, account }: { me: Me; locale: Locale; buyer: boolean; items: NavItem[]; inboxHref: string; account: React.ReactNode }) {
   const m = messages[locale], t = m.shell, router = useRouter(), { query, setQuery } = useShellSearch();
   const [bell, setBell] = useState(false), [menu, setMenu] = useState(false), [searching, setSearching] = useState(false);
-  const unread = useUnreadCount(!buyer, bell);
+  const unread = useUnreadCount(!buyer);
   const bellRef = useDismiss(bell, () => setBell(false)), menuRef = useDismiss(menu, () => setMenu(false)), onInbox = items.some(item => item.key === "inbox" && item.active);
   // البحث يعمل في الوارد؛ من لا يقرأ المواد (المالية) لا يُعرض له بحث يقود إلى صفحة لا يملكها.
   const searchable = items.some(item => item.key === "inbox");
