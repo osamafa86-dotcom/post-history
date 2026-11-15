@@ -9,9 +9,20 @@ export const formWriters = ["system_admin"] as const satisfies readonly RoleName
 // حد خاص بلقطة النموذج، دون توسيع حد إجراءات المراجعة؛ أقل من حد API الافتراضي.
 export const formBodyLimit = 64 * 1024;
 
+/** أزواج الحدود في قواعد الحقل: الطول والقيمة وعدد العناصر. */
+export const boundPairs = [["min_length", "max_length"], ["min", "max"], ["min_items", "max_items"]] as const;
+/** حقول حدّها الأدنى فوق الأقصى: لا قيمة ترضيها، والإصدار المنشور لا يُعدَّل. المخطط لا يعبّر عن ذلك، والخادم يرفضه كذلك. */
+export function boundProblems(form: Pick<Form, "fields">): { key: string; low: (typeof boundPairs)[number][0]; high: (typeof boundPairs)[number][1] }[] {
+  return form.fields.flatMap(field => {
+    const rules = (field.validation ?? {}) as Record<string, unknown>;
+    return boundPairs.filter(([low, high]) => typeof rules[low] === "number" && typeof rules[high] === "number" && (rules[low] as number) > (rules[high] as number)).map(([low, high]) => ({ key: field.key, low, high }));
+  });
+}
+
 export function validForm(value: unknown): value is Form {
   if (!validateSchema(value)) return false;
   const form = value as Form;
+  if (boundProblems(form).length) return false;
   if (!Number.isSafeInteger(form.version) || form.version > 999999999) return false;
   const dependencies = new Map(form.fields.map(f => [f.key, f.condition?.field]));
   if (dependencies.size !== form.fields.length || form.fields.some(f => f.condition && !dependencies.has(f.condition.field))) return false;

@@ -64,7 +64,7 @@ test("P1 signs in with a passkey, says so when it is cancelled, refused or off, 
 
 test("Security lists passkeys, adds one after a password and code re-check, revokes with a confirmation, and shows backup codes once", async ({ page, request }) => {
   await authenticator(page, fresh); await login(page, "reviewer");
-  await page.getByRole("button", { name: new RegExp(`^${ar.shell.account}`) }).click(); await page.getByTestId("menu-security").click();
+  await page.getByRole("button", { name: new RegExp(ar.shell.account) }).click(); await page.getByTestId("menu-security").click();
   await expect(page.getByRole("heading", { level: 1, name: ar.security.title })).toBeVisible();
   const passkeys = page.getByTestId("passkeys");
   await expect(passkeys.getByRole("listitem")).toHaveCount(1); await expect(passkeys.getByRole("listitem")).toContainText("حاسوب المكتب"); await expect(passkeys.getByRole("listitem")).toContainText(ar.security.synced);
@@ -132,7 +132,8 @@ test("Backup codes after the session ended go to sign-in and say why", async ({ 
   await login(page, "reviewer"); await page.goto("/ar/security");
   await page.getByTestId("generate-codes").click(); const form = page.getByTestId("codes-form");
   await form.getByLabel(ar.security.password).fill("synthetic-password"); await form.getByLabel(ar.security.totp).fill("123456");
-  await request.post(`${api}/__test/revoke`); await form.getByRole("button", { name: ar.security.generate }).click();
+  // طلبات الهيكل الأولى (الجلسة وعدّاد الجرس) تنتهي قبل الإبطال: الإرسال نفسه هو الذي يكتشف انتهاء الجلسة، لا طلب في الخلفية يسبقه
+  await page.waitForLoadState("networkidle"); await request.post(`${api}/__test/revoke`); await form.getByRole("button", { name: ar.security.generate }).click();
   await expect(page).toHaveURL(/\/ar\/login\?reason=revoked&next=%2Far%2Fsecurity$/); await expect(page.getByText(ar.revoked)).toBeVisible();
   expect(await writes(request, "/v1/auth/recovery-codes")).toHaveLength(0);
 });
@@ -173,7 +174,7 @@ test("A1 issues a one-time reset link after a confirmation with its effect, show
 test("A supervisor approves a recovery request from its notification with a note, sees the link once, and a second approval is refused", async ({ page, request }) => {
   await request.post(`${api}/__test/recovery-notice`); await login(page, "reviewer");
   await page.goto("/ar/notifications"); await page.getByTestId("notification").filter({ hasText: ar.shell.bell.kinds.account }).click();
-  await page.getByRole("link", { name: ar.notice.open, exact: true }).click();
+  await page.getByRole("link", { name: ar.notice.openRequest, exact: true }).click();
   await expect(page).toHaveURL(/\/ar\/recovery-requests\/70000000-0000-4000-8000-000000000001$/);
   await expect(page.getByRole("heading", { level: 1, name: ar.recovery.approve.title })).toBeVisible();
   const approve = page.getByTestId("approve-recovery"); await expect(approve).toBeDisabled();

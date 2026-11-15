@@ -18,16 +18,17 @@ test("the reporter sees their materials, what needs action and the supervisor's 
   await expect(action.first().getByTestId("supervisor-note")).toContainText("00:42");
   await expect(page.getByText(ar.mine.uploadFailed)).toBeVisible();
   await expect(page.getByTestId("mine-row").filter({ hasText: "مكررة مع مادة سابقة" })).toHaveCount(1);
-  await expect(page.locator("main")).not.toContainText("never-display-canary");
+  await expect(page.locator("main")).not.toContainText("اطّلعت عليها والمصدر قيد التحقق");
   await page.screenshot({ path: ".artifacts/my-materials-ar.png", fullPage: true });
   await action.first().getByRole("link").click(); await expect(page.locator(".history-list")).toContainText("أعد اللقطة الافتتاحية بإضاءة أفضل");
-  await expect(page.locator(".history-list")).not.toContainText("never-display-canary");
+  await expect(page.locator(".history-list")).not.toContainText("اطّلعت عليها والمصدر قيد التحقق");
 });
-test("the page reads in English and stays off the menu for staff, who never see the reason", async ({ page, context }) => {
+test("the page reads in English and stays off the menu for staff, who read the reasons in the material's history", async ({ page, context }) => {
   await login(page, "reporter", "en"); await page.goto("/en/my-materials");
   await expect(page.getByRole("heading", { name: en.mine.title, exact: true })).toBeVisible(); await expect(page.getByText(en.mine.action, { exact: true })).toBeVisible();
   await context.clearCookies(); await login(page, "reviewer");
   await expect(page.getByRole("link", { name: ar.mine.nav, exact: true })).toHaveCount(0);
   await page.goto(`/ar/materials/${first}`); await expect(page.locator(".history-list li")).toHaveCount(2);
-  await expect(page.locator(".history-list")).not.toContainText("أعد اللقطة");
+  // قرار المنسّق 2026-11-15: الطاقم الذي يقرأ المادة يرى سبب كل انتقال في سجلها
+  await expect(page.locator(".history-list")).toContainText("أعد اللقطة الافتتاحية بإضاءة أفضل"); await expect(page.locator(".history-list")).toContainText("اطّلعت عليها والمصدر قيد التحقق");
 });

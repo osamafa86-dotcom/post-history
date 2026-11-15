@@ -62,7 +62,7 @@ describe("recovery without email: inputs and allow-lists", () => {
     const notice = safeNotification({ id: "n", type: "auth.recovery_requested", title: "never-display-canary", material_id: null, recovery_request_id: requestId, priority: "normal", state: "sent", escalation_level: 0, created_at: "2026-11-03T10:00:00Z", read_at: null, acknowledged_at: null });
     expect(notice.recovery_request_id).toBe(requestId); expect(notice.title).toBe("");
     expect(notificationTarget(notice, "en")).toBe(`/en/recovery-requests/${requestId}`);
-    expect(notificationKind(notice)).toEqual({ word: "account", icon: "key" });
+    expect(notificationKind(notice)).toEqual({ word: "account", icon: "key", urgent: false });
     expect(safeNotification({ ...notice, recovery_request_id: "../x" }).recovery_request_id).toBeUndefined();
   });
 });

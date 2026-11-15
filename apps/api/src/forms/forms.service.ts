@@ -108,7 +108,17 @@ function toUploadForm(row: typeof uploadForms.$inferSelect): UploadForm {
   };
 }
 
-/** ما لا يعبّر عنه المخطط: مفاتيح فريدة، و`condition.field` يشير إلى حقل آخر موجود. */
+/** أزواج الحدود في `validation`: الأدنى لا يتجاوز الأقصى، وإلا لا قيمة ترضي الحقل، والإصدار المنشور لا يُعدَّل. */
+const BOUNDS = [
+  ['min_length', 'max_length'],
+  ['min', 'max'],
+  ['min_items', 'max_items'],
+] as const;
+
+/**
+ * ما لا يعبّر عنه المخطط: مفاتيح فريدة، و`condition.field` يشير إلى حقل آخر موجود، وحدّ أدنى لا يتجاوز الأقصى (الطول والقيمة وعدد
+ * العناصر). المسار يسمّي الحقل والحدّ.
+ */
 export function structuralProblems(form: UploadForm): string[] {
   const problems: string[] = [];
   const keys = form.fields.map((f) => f.key);
@@ -116,6 +126,12 @@ export function structuralProblems(form: UploadForm): string[] {
     if (keys.indexOf(f.key) !== i) problems.push(`/fields/${i}/key`);
     if (f.condition && (f.condition.field === f.key || !keys.includes(f.condition.field))) {
       problems.push(`/fields/${i}/condition/field`);
+    }
+    const rules = (f.validation ?? {}) as Record<string, unknown>;
+    for (const [low, high] of BOUNDS) {
+      const min = rules[low];
+      const max = rules[high];
+      if (typeof min === 'number' && typeof max === 'number' && min > max) problems.push(`/fields/${i}/validation/${high}`);
     }
   });
   return problems;

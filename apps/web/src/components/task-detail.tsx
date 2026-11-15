@@ -112,13 +112,16 @@ function TaskActions({ locale, task, produced, onMoved, onStale }: { locale: Loc
     if (ok && next) { setReturning(false); setReason(""); onMoved(next); return; }
     if (code === "invalid_transition") onStale();
   }
-  const closed = !isOpen(task.state);
+  const closed = !isOpen(task.state), mine = task.assignee_id === me.user_id;
   return <section className="card task-actions" aria-labelledby="task-actions-title" data-testid="task-actions"><h2 id="task-actions-title">{t.actionsTitle}</h2>
     {closed ? <><p data-testid="task-closed">{(task.state === "done" ? t.closedDone : t.closedReturned).replace("{time}", formatDate(task.closed_at, locale))}</p>
       {task.state === "done" && <p className="caption" data-testid="task-delivered">{task.produced_file_id ? t.produced.deliveredWith : t.produced.deliveredWithout}</p>}
-      {task.produced_file_id && hasRole(me, ...producedReaders) && <ProducedDownload locale={locale} materialId={task.material_id} fileId={task.produced_file_id} />}</> : <>
+      {task.produced_file_id && hasRole(me, ...producedReaders) && <ProducedDownload locale={locale} materialId={task.material_id} fileId={task.produced_file_id} />}
+      {/* التسليم لا يغيّر حالة المادة (ADR 0096): يُقال للمونتير ما يلي، ورابطه */}
+      {task.state === "done" && mine && <div className="notice" role="note" data-testid="task-next"><p>{t.next.delivered}</p><Link prefetch={false} className="button" href={`/${locale}/materials/${task.material_id}`}>{t.openMaterial}</Link></div>}</> : <>
       {forward.length > 0 && <div className="next-actions">{forward.map((to, i) => <button key={to} type="button" className={i ? "secondary" : undefined} data-testid={`act-${to}`} disabled={mutation.busy || (to === "done" && pending)} onClick={() => { if (to === "done") { mutation.clearStatus(); setDelivering(true); } else void move(to); }}>{t.act[to]}</button>)}</div>}
       {forward.includes("done") && <p className="caption">{pending ? t.produced.waiting : t.doneHint}</p>}
+      {task.state === "in_progress" && mine && <p className="notice" role="note" data-testid="task-next">{t.next.working} <Link prefetch={false} href={`/${locale}/materials/${task.material_id}`}>{t.openMaterial}</Link></p>}
       {steps.includes("returned") && (returning ? <form className="return-form" onSubmit={e => { e.preventDefault(); if (reasonOk) void move("returned"); }}>
         <h3>{t.returnTitle}</h3>
         <label>{t.returnReason}<input dir="auto" maxLength={noteMax} value={reason} aria-invalid={!reasonOk} aria-describedby="return-hint" onChange={e => { mutation.clearStatus(); setReason(cleanNote(e.target.value)); }} /></label>
