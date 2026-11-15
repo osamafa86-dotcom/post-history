@@ -3216,5 +3216,15 @@
     "photoCounter": "Photo {n} of {total}",
     "openPhoto": "Show photo {n} of {total}"
   },
-  "previewNoneForType": "No preview for this file type; the original is kept."
+  "previewNoneForType": "No preview for this file type; the original is kept.",
+  "mediaInvalid": {
+    "title": "This file is not valid media",
+    "preview": "This file is not valid media; it has no preview.",
+    "file": "This file is not valid media: it cannot be played and has no preview.",
+    "some": "{n} of {total} original files are not valid media.",
+    "owner": "The file arrived and its checksum matched, but it cannot be read as video, a photo or audio: it is damaged, or another kind of file under a media name. Upload the right file again as a new material.",
+    "staff": "It arrived and its checksum matched; the reporter uploads the right file again.",
+    "upload": "Upload the right file",
+    "card": "Its file is not valid media. Upload the right file again."
+  }
 }

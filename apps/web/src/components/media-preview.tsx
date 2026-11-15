@@ -46,7 +46,7 @@ function ClipPicture({ locale, materialId, file, number }: { locale: Locale; mat
  * والصورة الثابتة تُعرض مصغّرتها مكان المشغّل بنسبتها، بالتبديل نفسه بين الصور؛ وأصل لا يُصنع له ما يُعرض (HEIC وRAW) يُقال عنه ذلك.
  */
 export function MediaPreview({ locale, material }: { locale: Locale; material: Material }) {
-  const m = messages[locale], { poster, thumbnails, clips, photos, unseen } = staffPreview(material), [chosen, setChosen] = useState<string | null>(null);
+  const m = messages[locale], { poster, thumbnails, clips, photos, unseen, invalid } = staffPreview(material), [chosen, setChosen] = useState<string | null>(null);
   // ما يُعرض مكان المشغّل: مقاطع الفيديو ثم الصور الثابتة (مصغّرة الصورة التي صنعها الخادم هي معاينتها)، ولكلٍّ زرّه في الشريط.
   const items = [...clips.map(clip => ({ id: clip.proxy.id, video: clip.proxy as MaterialFile | null, picture: clip.thumbnail })), ...photos.map(file => ({ id: file.id, video: null as MaterialFile | null, picture: file as MaterialFile | null }))];
   const at = Math.max(0, items.findIndex(item => item.id === chosen)), current = items[at] ?? null, many = items.length > 1, still = !!current && !current.video;
@@ -56,7 +56,7 @@ export function MediaPreview({ locale, material }: { locale: Locale; material: M
   return <section className="preview-panel" aria-label={m.preview}>
     {current?.video ? <PreviewAsset key={`${material.id}-${current.id}`} locale={locale} materialId={material.id} file={current.video} />
       : current?.picture ? <div className="photo-stage" data-testid="photo-stage"><PreviewAsset key={`${material.id}-${current.id}`} locale={locale} materialId={material.id} file={current.picture} /></div>
-      : <div className="preview-empty" data-testid="preview-preparing">{poster ? <PreviewAsset key={`${material.id}-${poster.id}`} locale={locale} materialId={material.id} file={poster} /> : <span className="play-mark" aria-hidden="true" />}<p role="status">{unseen ? m.previewNoneForType : material.files.some(file => file.kind === "original" || file.kind === "proxy") ? m.previewPreparing : m.previewNoFile}</p></div>}
+      : <div className="preview-empty" data-testid="preview-preparing">{poster ? <PreviewAsset key={`${material.id}-${poster.id}`} locale={locale} materialId={material.id} file={poster} /> : <span className="play-mark" aria-hidden="true" />}<p role="status">{invalid ? m.mediaInvalid.preview : unseen ? m.previewNoneForType : material.files.some(file => file.kind === "original" || file.kind === "proxy") ? m.previewPreparing : m.previewNoFile}</p></div>}
     {many && <p className="clip-counter" role="status" data-testid="clip-counter">{count(still ? m.clips.photoCounter : m.clips.counter, at + 1)}</p>}
     {(many || strip.length > 0) && <div className="thumbnails" role={many ? "group" : undefined} aria-label={many ? (clips.length ? m.clips.title : m.clips.photosTitle) : undefined}>
       {many && items.map((item, index) => <button key={item.id} type="button" className="clip-button" data-testid="clip-button" aria-pressed={index === at} aria-label={count(item.video ? m.clips.open : m.clips.openPhoto, index + 1)} onClick={() => setChosen(item.id)}><ClipPicture locale={locale} materialId={material.id} file={item.picture} number={index + 1} /></button>)}
