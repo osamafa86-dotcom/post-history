@@ -33,7 +33,7 @@ const card = (n: number, editorial_state: Material["editorial_state"], technical
 describe("production board columns (four, ADR 0078)", () => {
   it("is exactly the four columns of the design, in start-to-end order", () => {
     expect(productionColumns).toEqual(["incoming", "checking", "ready", "stalled"]);
-    expect(productionColumns.map(c => ar.board.columns[c])).toEqual(["واردة", "قيد التحقق", "جاهزة للنشر", "متوقفة"]);
+    expect(productionColumns.map(c => ar.board.columns[c])).toEqual(["واردة مكتملة", "قيد التحقق", "جاهزة للنشر", "متوقفة"]);
     expect(Object.keys(en.board.columns)).toEqual([...productionColumns]); expect(Object.keys(ar.board.columnHelp)).toEqual([...productionColumns]); expect(Object.keys(en.board.columnHelp)).toEqual([...productionColumns]);
   });
   it("maps every editorial and technical state pair as documented, including the overlaps", () => {
