@@ -130,6 +130,7 @@ describe('account creation on a real host (cli:create-user, ADR 0030)', () => {
     expect(() => parseCreateUserCliArgs(['--email', 'a@b.org', '--role', 'system_admin', '--mode', 'bootstrap', '--approver', id])).toThrow(/0 --approver/);
     // اسم العمل عند الإنشاء: يظهر في القوائم والسجل بدل «حساب <أول 8>»
     expect(parseCreateUserCliArgs(['--email', 'a@b.org', '--role', 'producer', '--work-name', 'مونتير المساء', '--mode', 'one-admin', '--approver', id])).toMatchObject({ workName: 'مونتير المساء' });
+    expect(() => parseCreateUserCliArgs(['--email', 'a@b.org', '--role', 'reporter', '--office', id, '--work-name', 'مراسل', '--mode', 'one-admin', '--approver', id])).toThrow(/not for a reporter/);
     for (const bad of [' padded ', '', 'x'.repeat(81), 'a\u202eb']) {
       expect(() => parseCreateUserCliArgs(['--email', 'a@b.org', '--role', 'producer', '--work-name', bad, '--mode', 'one-admin', '--approver', id])).toThrow(/--work-name/);
     }

@@ -56,6 +56,8 @@ export function parseCreateUserCliArgs(argv: string[]): CreateUserCliArgs {
   if (workName !== undefined && (workName.length < 1 || Array.from(workName).length > 80 || workName !== workName.trim() || /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/.test(workName))) {
     throw new Error('--work-name must be 1 to 80 characters with no leading or trailing space and no control characters');
   }
+  // اسم العمل للطاقم وحده (ADR 0035): لا يُعيَّن لحساب مراسل، فلا يكشف مراسلًا ولا مصدرًا
+  if (workName !== undefined && values.role === 'reporter') throw new Error('--work-name is for staff accounts, not for a reporter');
   const approverIds = values.approver ?? [];
   if (approverIds.length !== APPROVERS[mode] || !approverIds.every((id) => UUID.test(id))) {
     throw new Error(`--mode ${values.mode} takes ${APPROVERS[mode]} --approver user id(s)`);
