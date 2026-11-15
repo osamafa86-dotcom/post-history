@@ -297,3 +297,19 @@ test("the form survives a revoked session for its owner, and an explicit sign-ou
   await expect(page).toHaveURL(/\/ar\/login\?reason=signed-out$/);
   expect(await page.evaluate(() => sessionStorage.getItem("upload-draft"))).toBeNull();
 });
+
+test("a running upload carries on while its tab is hidden and finishes when the tab is shown again", async ({ page, request }) => {
+  const tab = (state: "hidden" | "visible") => page.evaluate(value => { Object.defineProperty(document, "visibilityState", { value, configurable: true }); document.dispatchEvent(new Event("visibilitychange")); }, state);
+  await login(page);
+  // الجزء الثاني يُرفض مرتين فيبقى النقل جاريًا بضع ثوانٍ: يُخفى التبويب في أثنائه
+  await request.post(`${api}/__test/tus?fail_patches=2`);
+  const { file } = camera(3 * 1048576 + 99);
+  await page.getByLabel(ar.upload.choose).setInputFiles(file); await describe(page);
+  const row = page.getByTestId("upload-row");
+  await expect(row).toHaveAttribute("data-phase", "uploading", { timeout: 10000 }); await expect.poll(async () => (await uploads(page))[0]?.offset ?? 0).toBeGreaterThan(0);
+  await tab("hidden"); await page.waitForTimeout(1500);
+  await expect(row).toHaveCount(1); await expect(row).not.toHaveAttribute("data-phase", /failed|cancelled/);
+  await tab("visible");
+  await expect(row).toHaveAttribute("data-phase", "done", { timeout: 30000 });
+  const all = await uploads(page); expect(all).toHaveLength(1); expect(all[0]).toMatchObject({ state: "verified", offset: file.buffer.length });
+});
