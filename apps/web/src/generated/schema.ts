@@ -141,6 +141,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/recovery/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف طلب الاستعادة */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * قراءة طلب استعادة حساب لمن يملك اعتماده
+         * @description ما يحتاجه المعتمِد ليعرف أي حساب يعتمد استعادته قبل أن يعتمد: اسم العمل والأدوار والمكتب، وحالة الطلب ووقته وانتهاؤه. **بلا بريد وبلا اسم قانوني** ولا أي وسيلة اتصال: التحقق من الهوية يجري خارج النظام. الصلاحية صلاحية الاعتماد نفسها (`POST /auth/recovery/{id}/approve`): المشرف يقرأ طلب حساب مراسل في نطاقه وحده، ومدير النظام يقرأ ما عداه؛ وما ليس للمتصل `404` كما في الاعتماد، فلا يُعرف وجود الطلب. الطلب المعتمَد أو المنتهي أو المرفوض يُقرأ بحاله. طلب بانتظار الاعتماد فات موعده يُقرأ `expired`. القراءة لا تغيّر شيئًا ولا تعيد رمز إعادة التعيين أبدًا.
+         */
+        get: operations["getRecoveryRequest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/recovery/{id}/approve": {
         parameters: {
             query?: never;
@@ -2742,6 +2765,29 @@ export interface components {
              * @description انتهاء صلاحية الطلب أو الرابط
              */
             expires_at?: string | null;
+        };
+        /** @description طلب استعادة كما يقرؤه من يملك اعتماده، ومعه ما يعرّف الحساب داخليًا. لا بريد ولا اسم قانوني ولا رمز. */
+        RecoveryRequestDetail: components["schemas"]["RecoveryRequest"] & {
+            account: {
+                /**
+                 * Format: uuid
+                 * @description معرّف الحساب؛ يُعرض مختصرًا حين لا اسم عمل له
+                 */
+                user_id: string;
+                /** @description اسم العمل الداخلي (ADR 0035)؛ `null` = لم يُعيَّن */
+                work_name: components["schemas"]["WorkName"] | null;
+                roles: components["schemas"]["RoleName"][];
+                /**
+                 * Format: uuid
+                 * @description مكتب الحساب
+                 */
+                office_id: string | null;
+                /** @description اسم المكتب باللغتين؛ `null` لحساب بلا مكتب */
+                office_name: {
+                    ar: string;
+                    en: string;
+                } | null;
+            };
         };
         RecoveryCodeStatus: {
             /** @description الرموز غير المستعملة من المجموعة الحالية */
@@ -5690,6 +5736,32 @@ export interface operations {
             };
             422: components["responses"]["UnprocessableEntity"];
             429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getRecoveryRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف طلب الاستعادة */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الطلب والحساب الذي يخصه */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryRequestDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     approveRecovery: {
