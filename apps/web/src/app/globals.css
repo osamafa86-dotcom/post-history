@@ -172,7 +172,15 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .offer-row { display: grid; gap: 6px; padding: 8px 0; border-bottom: 1px solid var(--v2-c-border-line); }
 .one-time-token .token-value { display: block; padding: 12px; font-family: var(--v2-font-family-mono); overflow-wrap: anywhere; background: var(--v2-c-bg-sunken); border: 1px dashed var(--v2-c-border-line); }
 .certificate .terms-text { white-space: pre-wrap; }
-@media print { .topbar, .back-link, .no-print, .skip-link { display: none !important; } .certificate { border: 0; box-shadow: none; } }
+@media print {
+  .topbar, .back-link, .no-print, .skip-link { display: none !important; }
+  /* عناوين اللغة الثانية في الشهادة تظهر في المطبوع وحده */
+  .certificate [data-second]::after { content: " · " attr(data-second); }
+  /* الشهادة ورقة: وجهها فاتح عند الطباعة (data-mode من المكوّن)، بلا إطار ولا ظل، وصفّها لا ينقسم بين صفحتين */
+  .certificate { border: 0; box-shadow: none; padding: 0; background: transparent; color: var(--v2-c-text-primary); }
+  .certificate .metadata > div, .certificate section { break-inside: avoid; }
+  .certificate a { color: inherit; text-decoration: none; }
+}
 @media (max-width: 1000px) { .stats article { padding: 15px; } .stats span { font-size: var(--v2-font-caption-size); } .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } .table-tools { flex-wrap: wrap; } .detail-grid { grid-template-columns: 1fr; } }
 @media (max-width: 650px) { .page-heading { align-items: flex-start; gap: 10px; } .page-heading .muted { font-size: 12px; } .live-strip { gap: 10px; } .live-strip small { margin-inline-start: 0; width: 100%; } .stats { grid-template-columns: 1fr; } .stats article { padding: 10px 16px; border-inline-end: 0; border-bottom: 1px solid var(--v2-c-border-line); } .stats strong { font-size: 22px; } .table-tools small { max-width: none; margin-inline: 0; } .state-grid { gap: 8px; } .state-grid article { padding: 12px 8px; } .card { padding: 20px; } .dynamic-values { grid-template-columns: 1fr; } }
 .rule-form { display: grid; gap: 16px; }

@@ -19,7 +19,7 @@ export const pageNames = {
   "notification-rules": (m: Messages) => m.rules.title, "commission-rules": (m: Messages) => m.commission.nav, "invite-conflicts": (m: Messages) => m.conflicts.nav,
   "recovery-requests/[id]": (m: Messages) => m.pageTitles.recovery, security: (m: Messages) => m.security.title,
   login: (m: Messages) => m.pageTitles.login, "forgot-password": (m: Messages) => m.pageTitles.forgot, "reset-password": (m: Messages) => m.pageTitles.reset, invite: (m: Messages) => m.pageTitles.invite,
-  privacy: (m: Messages) => m.privacy.title, "verify/[number]": (m: Messages) => m.pageTitles.verify,
+  privacy: (m: Messages) => m.privacy.title, "verify/[number]": (m: Messages) => m.pageTitles.verify, verify: (m: Messages) => m.pageTitles.verifyLookup,
 };
 export type PageName = keyof typeof pageNames;
 

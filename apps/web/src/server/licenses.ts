@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { Me } from "@/lib/types";
 import { hasRole } from "@/lib/review";
 import { uuid } from "@/lib/query";
-import { allowedDownload, licenseDownloaders, licenseNumberPattern, licenseReaders, licenseStatuses, safeLicense, safeVerification } from "@/lib/issued-licenses";
+import { allowedDownload, licenseDownloaders, licenseNumberPattern, licenseReaders, licenseStatuses, normalizeLicenseNumber, safeLicense, safeVerification } from "@/lib/issued-licenses";
 import { clientAddress, requireOk, upstream, type Api } from "./auth";
 import type { WebConfig } from "./config";
 import { WebError } from "./errors";
@@ -36,8 +36,9 @@ export async function licenseDownload(path: string, api: Api, me: Me, body: Reco
   return json({ url: data.url, expires_at: data.expires_at, downloads_remaining: data.downloads_remaining });
 }
 
-/** التحقق العام بلا جلسة: الرقم بصيغته وحدها، وحدّ المعدل عند الخادم على عنوان العميل، والنتيجة رقم وحالة لا غير. */
-export async function licenseVerify(request: Request, number: string, config: WebConfig, transport?: typeof fetch) {
+/** التحقق العام بلا جلسة: الرقم يُطبَّع (حالة الحروف والفراغات) ثم يُقبل بصيغة العقد وحدها، وحدّ المعدل عند الخادم على عنوان العميل، والنتيجة رقم وحالة لا غير. */
+export async function licenseVerify(request: Request, typed: string, config: WebConfig, transport?: typeof fetch) {
+  const number = normalizeLicenseNumber(typed);
   if (!licenseNumberPattern.test(number) || new URL(request.url).search) throw new WebError(404, "request_failed");
   const result = await upstream(config, undefined, transport, clientAddress(request, config)).GET("/license-verifications/{license_number}", { params: { path: { license_number: number } } });
   if (result.response.status === 401) throw new WebError(404, "request_failed");
