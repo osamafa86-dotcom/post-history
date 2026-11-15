@@ -136,7 +136,45 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
 
       expect((await verify(s.id, body).expect(200)).body).toEqual(res.body);
       expect((await verify(s.id, report(5000)).expect(409)).body.code).toBe('upload_state_conflict');
+      expect((await verify(s.id, { result: 'storage_error' }).expect(409)).body.code).toBe('upload_state_conflict');
+    });
+
+    // ملحق (ب) على ADR 0092: المتحقّق داخل الخادم يطابق البصمة وحدها؛ فحص العامل اللاحق يُحفظ على الملف ولا يمس الحالات
+    it('invalid_file for an original already verified is kept on the file as media_check and changes nothing else; a matching verified report clears it', async () => {
+      const sha = randomBytes(32);
+      const s = await completed({ clientSha: sha });
+      const first = (await verify(s.id, report(5000, sha)).expect(200)).body;
+      const tracks = async () => (await h.pool.query(`SELECT technical_state, editorial_state, rights_state, row_version FROM materials WHERE id = $1`, [s.materialId])).rows[0];
+      const events = async () => (await h.pool.query(`SELECT count(*)::int AS n FROM outbox_events`)).rows[0].n as number;
+      const file = async () => (await h.pool.query(`SELECT state, receipt_number, media_check FROM material_files WHERE id = $1`, [first.file_id])).rows[0];
+      const [before, n] = [await tracks(), await events()];
+
+      for (let i = 0; i < 2; i++) expect((await verify(s.id, { result: 'invalid_file' }).expect(200)).body).toEqual(first);
+      expect(await file()).toEqual({ state: 'verified', receipt_number: first.receipt_number, media_check: 'invalid' });
+      expect((await h.pool.query(`SELECT state, failure_reason FROM upload_sessions WHERE id = $1`, [s.id])).rows[0]).toEqual({ state: 'verified', failure_reason: null });
+      expect(await tracks()).toEqual(before);
+      expect(await events()).toBe(n);
+
+      // يظهر على الملف نفسه في المادة، لصاحبها وللطاقم
+      const chief = await loginAs(h, [{ role: 'editor_in_chief' }]);
+      const seen = (await http().get(`/v1/materials/${s.materialId}`).set('Authorization', `Bearer ${chief.token}`).expect(200)).body;
+      expect(seen.technical_state).toBe(before.technical_state);
+      expect(seen.files.map((f: { kind: string; state: string; media_check: string | null }) => [f.kind, f.state, f.media_check])).toEqual([['original', 'verified', 'invalid']]);
+
+      // العامل صار يقرؤه (بلاغ verified مطابق للبصمة): تُمحى القيمة
+      expect((await verify(s.id, report(5000, sha)).expect(200)).body).toEqual(first);
+      expect((await file()).media_check).toBeNull();
+    });
+
+    it('invalid_file stays a conflict for a verified session that is not an original, and a late storage_error stays one', async () => {
+      const sha = randomBytes(32);
+      const s = await completed({ clientSha: sha, kind: 'voice_note' });
+      const first = (await verify(s.id, report(5000, sha)).expect(200)).body;
       expect((await verify(s.id, { result: 'invalid_file' }).expect(409)).body.code).toBe('upload_state_conflict');
+      expect((await h.pool.query(`SELECT media_check FROM material_files WHERE id = $1`, [first.file_id])).rows[0].media_check).toBeNull();
+      const o = await completed({ clientSha: sha });
+      await verify(o.id, report(5000, sha)).expect(200);
+      expect((await verify(o.id, { result: 'storage_error' }).expect(409)).body.code).toBe('upload_state_conflict');
     });
 
     it('the server decides checksum_mismatch against the client checksum, and invalid_file on a size that differs from the session or storage', async () => {

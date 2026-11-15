@@ -258,6 +258,12 @@ SELECT pg_temp.expect_error($q$
   VALUES ('00000000-0000-4000-8000-000000000101', 'proxy', 'received', '00000000-0000-4000-8000-000000000301', 'normal') $q$, '23505');
 SELECT pg_temp.expect_error($q$
   INSERT INTO material_files (material_id, kind, proxy_mode) VALUES ('00000000-0000-4000-8000-000000000101', 'original', 'urgent') $q$, '23514');
+-- نتيجة فحص العامل (media_check): قيمة معدودة، وللأصل وحده
+INSERT INTO material_files (material_id, kind, media_check) VALUES ('00000000-0000-4000-8000-000000000101', 'original', 'invalid');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO material_files (material_id, kind, media_check) VALUES ('00000000-0000-4000-8000-000000000101', 'original', 'valid') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO material_files (material_id, kind, media_check) VALUES ('00000000-0000-4000-8000-000000000101', 'voice_note', 'invalid') $q$, '23514');
 -- قائمة اللقطات مشتق من الأصل (threat-model §9.1)، ونوع خارج القائمة يُرفض
 INSERT INTO material_files (material_id, kind, state, derived_from_id)
 VALUES ('00000000-0000-4000-8000-000000000101', 'shot_list', 'received', '00000000-0000-4000-8000-000000000301');
