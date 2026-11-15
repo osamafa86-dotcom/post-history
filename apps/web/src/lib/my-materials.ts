@@ -1,5 +1,6 @@
 import type { Material, MaterialFile } from "./types";
 import { isSensitive } from "./render-policy";
+import { invalidOriginals } from "./preview-policy";
 
 /**
  * «موادي» على الويب بسلوك iOS (ADR 0089): معرض بطاقات الأحدث أولًا، مجمّع بعنوان التغطية أو بالنوع، برقاقات «الكل · فيديو · صور · عاجل».
@@ -11,10 +12,12 @@ export const mineFilters: MineFilter[] = ["all", "video", "photos", "urgent"];
 
 /** مادة لم يصل لها ملف: المسار الفني ما زال ينتظر، ولا أصل ولا نسخة هاتف بين ملفاتها. تُكمَل من صفحتها. */
 export const awaitingFile = (material: Material) => material.technical_state === "pending" && !material.files.some(file => file.kind === "original" || file.kind === "proxy");
+/** أصل وصل وطابقت بصمته لكنه ليس وسائط يقرؤها الخادم (`media_check`): صاحبه يرفع الملف الصحيح من جديد. */
+export const hasInvalidFile = (material: Material) => invalidOriginals(material).invalid > 0;
 /** لا أصل متحقَّقًا منه بعد (لم يصل ملف، أو فشل رفعه): صاحبها يرفع ملفها من صفحتها. */
 export const lacksOriginal = (material: Material) => awaitingFile(material) || material.technical_state === "failed";
 /** ما يحتاج المراسل أن يفعل فيه شيئًا: طلب تعديل من المشرف، أو رفع فشل ويُعاد، أو مادة لم يصل ملفها. */
-export const needsAction = (material: Material) => material.editorial_state === "needs_changes" || lacksOriginal(material);
+export const needsAction = (material: Material) => material.editorial_state === "needs_changes" || lacksOriginal(material) || hasInvalidFile(material);
 
 export function matchesFilter(material: Material, filter: MineFilter) {
   if (filter === "all") return true;

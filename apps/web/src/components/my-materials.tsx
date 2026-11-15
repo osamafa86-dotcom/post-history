@@ -6,7 +6,7 @@ import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { formatDate, longDate, messages, plural, type Locale } from "@/lib/i18n";
 import type { Material, TransitionRecord } from "@/lib/types";
 import { timecode } from "@/lib/editor";
-import { cardMedia, dayKind, durationLabel, groupMaterials, materialDuration, matchesFilter, mineCounts, mineFilters, mineBucket, mineBuckets, type MineFilter, type MineGroup, type MineGrouping, monthName, timeSections, type MineSection, needsAction } from "@/lib/my-materials";
+import { hasInvalidFile, cardMedia, dayKind, durationLabel, groupMaterials, materialDuration, matchesFilter, mineCounts, mineFilters, mineBucket, mineBuckets, type MineFilter, type MineGroup, type MineGrouping, monthName, timeSections, type MineSection, needsAction } from "@/lib/my-materials";
 import { useUser } from "./session-boundary";
 import { StateBadge } from "./states";
 import { EmptyState, ErrorState } from "./empty-state";
@@ -59,7 +59,7 @@ export function MyMaterials({ locale }: { locale: Locale }) {
     {!items ? error ? <ErrorState locale={locale} testId="mine-error" title={t.loadFailed} retry={() => setRefresh(n => n + 1)}><p>{t.errorBody}</p></ErrorState> : <><p className="visually-hidden" role="status">{m.loading}</p><ul className="mine-grid" aria-hidden="true">{[0, 1, 2, 3, 4, 5].map(i => <li key={i} className="mine-card"><span className="skeleton media" /><span className="skeleton line wide" /><span className="skeleton line" /></li>)}</ul></> : <>
       {action.length > 0 && <section className="card mine-action" aria-labelledby="mine-action"><h2 id="mine-action"><Icon name="alert" size={18} />{t.action}</h2><ul className="mine-list">{action.map(item => <li key={item.id} data-testid="mine-action">
         <Link className="material-link" prefetch={false} href={`/${locale}/materials/${item.id}`}>{item.title}</Link>
-        <p>{item.editorial_state === "needs_changes" ? t.changesRequested : item.technical_state === "failed" ? t.uploadFailed : t.awaitingFile}</p>
+        <p>{item.editorial_state === "needs_changes" ? t.changesRequested : hasInvalidFile(item) ? m.mediaInvalid.card : item.technical_state === "failed" ? t.uploadFailed : t.awaitingFile}</p>
         {item.editorial_state === "needs_changes" && <Note note={notes[item.id]} locale={locale} />}
       </li>)}</ul></section>}
       {!items.length ? <EmptyState icon="mine" testId="mine-empty" title={t.emptyTitle} actions={<Link prefetch={false} className="button" href={`/${locale}/upload`}>{m.upload.nav}</Link>}><p>{t.emptyBody}</p></EmptyState> : <>

@@ -6,13 +6,14 @@ import type { Material, MaterialType, TransitionRecord } from "@/lib/types";
 import { timecode } from "@/lib/editor";
 import { materialTypes } from "@/lib/query";
 import { answerMin, changedFields, changeRequest, editableStates, editErrors, type EditField } from "@/lib/material-edit";
-import { lacksOriginal } from "@/lib/my-materials";
+import { hasInvalidFile, lacksOriginal } from "@/lib/my-materials";
 import { acceptedFile, cameraExtensions, fileKey } from "@/lib/upload-policy";
 import { startUpload, type UploadControl } from "@/lib/desktop-upload";
 import { recordKey } from "@/lib/upload-store";
 import { useMutation } from "@/lib/use-mutation";
 import { ActionStatus } from "./action-status";
 import { UploadRow, type Row } from "./desktop-upload";
+import Link from "next/link";
 import { Icon } from "./icon";
 
 type Props = { locale: Locale; material: Material; tag: string | null; records: TransitionRecord[] | null; editing: () => void; release: () => void; reload: () => void; notify: (label: string) => void };
@@ -26,13 +27,17 @@ export function OwnerPanel({ locale, material, tag, records, editing, release, r
   // الرفع الجاري يبقي لوحته حتى ينتهي: تحديث المادة في أثنائه (وصول ملفها قبل التحقق) لا يزيلها فيوقف النقل.
   const changes = material.editorial_state === "needs_changes", note = changes ? changeRequest(records) : null, missing = lacksOriginal(material) || uploading;
   const mayEdit = (editableStates as readonly string[]).includes(material.editorial_state);
-  if (!changes && !missing && !mayEdit) return null;
+  // أصل وصل وطابقت بصمته لكنه ليس وسائط صالحة: يُقال لصاحبه ما هو وما يفعل. المادة متحققة فنيًّا، فالملف الصحيح يُرفع مادةً جديدة.
+  const invalid = hasInvalidFile(material);
+  if (!changes && !missing && !mayEdit && !invalid) return null;
   const open = (which: "resubmit" | "edit") => { editing(); setDialog(which); }, close = () => { setDialog(null); release(); };
   const edit = mayEdit && <button type="button" className="secondary" disabled={!tag} onClick={() => open("edit")}>{o.edit}</button>;
   return <section className="owner-panel" data-testid="owner-panel" aria-label={o.title}>
     {changes && <div className="owner-notice warn" role="status" data-testid="owner-changes"><h2><Icon name="alert" size={18} />{o.changesTitle}</h2>
       {note?.reason && <blockquote className="supervisor-note" data-testid="owner-note"><p><bdi dir="auto">{note.reason}</bdi></p><footer>{note.note_timecode_ms != null && <span>{m.mine.at} <bdi dir="ltr">{timecode(note.note_timecode_ms)}</bdi> · </span>}{formatDate(note.occurred_at, locale)}</footer></blockquote>}
       <div className="actions"><button type="button" disabled={!tag} onClick={() => open("resubmit")}>{o.resubmit}</button>{edit}</div></div>}
+    {invalid && <div className="owner-notice danger" role="status" data-testid="owner-invalid"><h2><Icon name="alert" size={18} />{m.mediaInvalid.title}</h2><p>{m.mediaInvalid.owner}</p>
+      <div className="actions"><Link prefetch={false} className="button" href={`/${locale}/upload`}>{m.mediaInvalid.upload}</Link></div></div>}
     {missing && <OwnerUpload key={`${material.id}:upload`} locale={locale} material={material} tag={tag} editing={editing} reload={reload} active={setUploading} />}
     {!changes && edit && <div className="actions owner-edit">{edit}</div>}
     {dialog === "resubmit" && <ResubmitDialog locale={locale} material={material} tag={tag} onClose={close} onDone={() => { setDialog(null); notify(m.states.editorial_state.reviewing); reload(); }} />}

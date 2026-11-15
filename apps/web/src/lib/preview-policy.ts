@@ -58,7 +58,14 @@ export function staffPreview(material: Pick<Material, "files" | "thumbnail_file_
   });
   // أصل لا يُصنع له شيء يُعرض: صورة ليست JPEG ولا PNG (HEIC وRAW)، أو بلا نوع معلن في مادة صور. الأصل محفوظ، ولا معاينة تُنتظر.
   const unseen = originals.length > 0 && originals.every(file => (isImage(file) && !previewable.includes(file.mime_type ?? "")) || (!file.mime_type && stills));
-  return { proxy: clips[0]?.proxy ?? null, poster, thumbnails, clips, photos, unseen: unseen && !clips.length && !photos.length };
+  // أصل فحصه العامل فلم يقرأه (`media_check`): لا معاينة تُنتظر له. يُقال ذلك حين لا يبقى أصل آخر قد تُصنع معاينته.
+  const checked = invalidOriginals(material), nothing = !clips.length && !photos.length;
+  return { proxy: clips[0]?.proxy ?? null, poster, thumbnails, clips, photos, unseen: unseen && nothing, invalid: nothing && checked.invalid > 0 && checked.invalid === checked.total };
+}
+/** عدد أصول المادة التي فحصها عامل الوسائط فلم يقرأها (ليست وسائط صالحة أو تالفة)، من أصولها المتحققة. */
+export function invalidOriginals(material: Pick<Material, "files">) {
+  const originals = material.files.filter(file => file.kind === "original" && file.state === "verified");
+  return { invalid: originals.filter(file => (file as { media_check?: unknown }).media_check === "invalid").length, total: originals.length };
 }
 const previewable = ["image/jpeg", "image/png"];
 const isImage = (file: MaterialFile) => (file.mime_type ?? "").startsWith("image/");

@@ -93,3 +93,22 @@ test("a failed upload is retried from the material's own page: the track returns
   expect(writes.filter(w => w.path.endsWith("/transitions")).map(w => w.body)).toEqual([{ track: "technical", to: "pending", reason: ar.owner.retryReason }]);
   expect(writes.filter(w => w.path === "/v1/materials" && w.method === "POST")).toHaveLength(0);
 });
+
+test("a file that is not valid media says so on the material, to its reporter and to the desk, and nothing waits for a preview", async ({ page, request, browser }) => {
+  const { id } = await (await request.post(`${api}/__test/invalid-file`)).json() as { id: string };
+  await login(page);
+  // «موادي»: المادة تحتاج إجراءً من صاحبها
+  const action = page.getByTestId("mine-action").filter({ hasText: ar.mediaInvalid.card }); await expect(action).toHaveCount(1);
+  await action.getByRole("link").click(); await expect(page).toHaveURL(new RegExp(`/ar/materials/${id}$`));
+  const notice = page.getByTestId("owner-invalid");
+  await expect(notice.getByRole("heading", { name: ar.mediaInvalid.title })).toBeVisible(); await expect(notice).toContainText(ar.mediaInvalid.owner);
+  await expect(notice.getByRole("link", { name: ar.mediaInvalid.upload })).toHaveAttribute("href", "/ar/upload");
+  const preview = page.getByTestId("preview-preparing"); await expect(preview).toContainText(ar.mediaInvalid.preview); await expect(preview).not.toContainText(ar.previewPreparing);
+  // الحالات لا تُمس: المسار الفني «تم التحقق» كما هو
+  await expect(page.locator("[data-track='technical_state']")).toContainText(ar.states.technical_state.verified);
+  // الطاقم يقرؤها على الملف في صفحة المادة، بلا لوحة صاحب المادة
+  const staff = await (await browser.newContext({ baseURL: new URL(page.url()).origin })).newPage(); await login(staff, "reviewer");
+  await staff.goto(`/ar/materials/${id}`);
+  await expect(staff.getByTestId("file-invalid")).toHaveText(`${ar.mediaInvalid.file} ${ar.mediaInvalid.staff}`); await expect(staff.getByTestId("preview-preparing")).toContainText(ar.mediaInvalid.preview);
+  await expect(staff.getByTestId("owner-invalid")).toHaveCount(0); await staff.context().close();
+});

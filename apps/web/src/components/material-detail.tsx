@@ -21,6 +21,7 @@ import { EmptyState, ErrorState } from "./empty-state";
 import { Icon } from "./icon";
 import { MaterialTags, type TagNotice } from "./material-tags";
 import { OwnerPanel } from "./owner-panel";
+import { invalidOriginals } from "@/lib/preview-policy";
 import { homePage, reporterOnly } from "@/lib/home-page";
 import { materialTag } from "@/lib/review";
 import { sensitivityState } from "@/lib/sensitivity";
@@ -68,13 +69,15 @@ export function MaterialDetail({ locale, id }: { locale: Locale; id: string }) {
     : <ErrorState locale={locale} testId="material-error" title={m.material.loadFailed} retry={() => setAttempt(n => n + 1)} />}</>;
   if (!material) return <>{crumbs()}<p className="visually-hidden" role="status">{m.loading}</p><div className="material-layout" aria-hidden="true"><div className="material-main"><span className="skeleton media" /><span className="skeleton line wide" /><span className="skeleton line" /></div><div className="material-side"><span className="skeleton card" /><span className="skeleton card" /></div></div></>;
   const receipt = material.files.find(f => f.receipt_number)?.receipt_number, last = lastEvents(records ?? []), names = { technical: m.technical, editorial: m.editorial, rights: m.rights };
-  const files = material.files.filter(f => f.kind === "original").length, time = shortTime(material.shot_at);
+  const files = material.files.filter(f => f.kind === "original").length, time = shortTime(material.shot_at), checked = invalidOriginals(material);
   const sensitivity = sensitivityState(material.sensitivity);
   return <>{crumbs(material.title)}{toast && <p className="toast" role="status">{m.review.transitioned.replace("{state}", toast)}</p>}
     <div className="material-layout">
       <div className="material-main">
         {owner && <OwnerPanel key={`${material.id}:owner`} locale={locale} material={material} tag={tag} records={records} editing={() => { editing.current = true; }} release={() => { editing.current = false; }} reload={reload} notify={setToast} />}
         <MediaPreview locale={locale} material={material} />
+        {/* أصل فحصه عامل الوسائط فلم يقرأه (ملحق (ب) على ADR 0092): يُقال على الملف نفسه للطاقم؛ وصاحبه يقرؤه في لوحته مع ما يفعل */}
+        {!owner && checked.invalid > 0 && <p className="notice error" role="status" data-testid="file-invalid">{checked.invalid === checked.total ? m.mediaInvalid.file : m.mediaInvalid.some.replace("{n}", String(checked.invalid)).replace("{total}", String(checked.total))} {m.mediaInvalid.staff}</p>}
         <div className="material-title"><h1><bdi dir="auto">{material.title}</bdi></h1>{material.priority !== "normal" && <span className={`priority-pill ${material.priority}`}>{material.priority === "urgent" && <Icon name="bolt" size={12} />}{m.states.priority[material.priority]}</span>}</div>
         <p className="material-meta"><span>{photographer(material, locale)}</span><span>{governorateName(material.governorate, m.governorates)}</span><span>{material.city}</span>{time && <span>{w.shot} <bdi dir="ltr">{time}</bdi></span>}{material.material_types.map(type => <span key={type}>{(m.types as Record<string, string>)[type] ?? type}</span>)}{files > 0 && <span>{plural(files, m.shell.inbox.files, locale)}</span>}<span>{m.version} <bdi dir="ltr">{material.version}</bdi></span><span className="receipt"><bdi dir="ltr">{receipt ?? m.noReceipt}</bdi></span>{material.acknowledged_at && <span>{m.material.acknowledged} {formatDate(material.acknowledged_at, locale)}</span>}</p>
         <MaterialTags key={`${material.id}:tags`} locale={locale} material={material} tag={tag} notice={tagNotice} setNotice={setTagNotice} editing={() => { editing.current = true; }} release={() => { editing.current = false; }} reload={reload} />
