@@ -12,9 +12,22 @@ export const dynamic = "force-dynamic";
 
 const EMAIL_TOKEN = "{email}";
 
-// يستبدل رمز {email} بالعقدة المعطاة؛ النص والبريد كلاهما يمرّان من هروب React.
+// يستبدل رمز {email} بالعقدة المعطاة؛ النص يمرّ من هروب React، وعقدة البريد من `contactLink`.
 function withEmail(text: string, email: ReactNode): ReactNode[] {
   return text.split(EMAIL_TOKEN).flatMap((part, index) => index === 0 ? [part] : [<Fragment key={index}>{email}</Fragment>, part]);
+}
+
+const HTML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" };
+const escapeHtml = (value: string) => value.replace(/[&<>\x22\x27]/g, char => HTML_ESCAPES[char] ?? "");
+
+/**
+ * رابط البريد بين تعليقَي `email_off`. خدمات تمويه البريد عند شبكة التوزيع تعيد كتابة كل عنوان تجده في HTML الصفحة، فيصل المتصفح غير ما يتوقعه
+ * React عند الإماهة ويُسجَّل خطأ ويُعاد رسم الصفحة. التعليقان هما الاستثناء الموثّق لتلك الخدمات، وتعليق HTML لا يُكتب من React إلا نصًّا خامًا:
+ * لذلك هذا الموضع الوحيد الذي يُكتب فيه HTML خام، وقيمته مرّت بفحص الشكل في `privacyContactEmail` (أحرف وأرقام و`._+-@` وحدها) وتُهرَّب مع ذلك.
+ */
+function contactLink(address: string): ReactNode {
+  const safe = escapeHtml(address);
+  return <span dangerouslySetInnerHTML={{ __html: `<!--email_off--><a href="mailto:${safe}" dir="ltr">${safe}</a><!--/email_off-->` }} />;
 }
 
 /** الخصوصية بإطار الصفحات العامة v2 (ADR 0103): فهرس الأقسام ثم الأقسام بطاقةً للقراءة. بريد التواصل من بيئة الخادم وحدها، ولا يُكتب في المستودع. */
@@ -23,7 +36,7 @@ export default async function PrivacyPage({ params }: { params: Promise<{ locale
   if (!isLocale(locale)) notFound();
   const m = messages[locale].privacy, other = locale === "ar" ? "en" : "ar";
   const address = privacyContactEmail();
-  const email = address ? <a href={`mailto:${address}`} dir="ltr">{address}</a> : m.emailPending;
+  const email = address ? contactLink(address) : m.emailPending;
   return <PublicFrame locale={locale} switchHref={`/${other}/privacy`} switchLabel={m.otherLanguage}>
     <main dir={locale === "ar" ? "rtl" : "ltr"} lang={locale} className="public-main privacy-page">
       <div className="privacy-head"><h1>{m.title}</h1><p className="muted">{m.body}</p></div>
