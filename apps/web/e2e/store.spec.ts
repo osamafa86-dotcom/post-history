@@ -38,8 +38,9 @@ test("exclusivity that is taken cannot be chosen, in English too", async ({ page
   await page.goto("/en/store/71000000-0000-4000-8000-000000000002");
   await expect(page.getByRole("heading", { name: "Synthetic footage 2" })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
-  await expect(page.getByRole("radio", { name: /Exclusive 48 h/ })).toBeDisabled();
-  await expect(page.getByText(en.store.exclusiveUntil.split("{date}")[0], { exact: false })).toBeVisible();
+  // حصرية نشطة على المادة: لا يُباع عليها ترخيص قبل نهايتها، فالعروض كلها معطّلة والمهلة مكتوبة
+  await expect(page.getByRole("radio", { name: /Exclusive 48 h/ })).toBeDisabled(); await expect(page.getByRole("radio", { name: /Editorial single use/ })).toBeDisabled();
+  await expect(page.getByTestId("exclusive-held")).toContainText(en.store.heldUntil.split("{date}")[0]);
 });
 
 test("reporters do not see the catalog and the BFF refuses them", async ({ page }) => {

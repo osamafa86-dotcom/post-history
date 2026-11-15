@@ -8,6 +8,7 @@ import { hasRole } from "@/lib/review";
 import { useMutation } from "@/lib/use-mutation";
 import { fileFormat, formatDuration, formatMoney, localized, orderLabel } from "@/lib/store-format";
 import { licenseDownloaders, licenseReaders, type IssuedLicense } from "@/lib/issued-licenses";
+import { delivered } from "@/lib/license-policy";
 import { useUser } from "../session-boundary";
 import { ActionStatus } from "../action-status";
 import { Icon } from "../icon";
@@ -117,7 +118,7 @@ export function LicenseCertificate({ locale, id }: { locale: Locale; id: string 
       <p><span className={`badge ${licenseTone(license.status)}`} data-testid="license-status">{t.statuses[license.status]}</span>{license.revoked_reason && <small className="muted"> {t.reasons[license.revoked_reason]}</small>}</p>
       <dl className="metadata">{[
         [t.number, <bdi dir="ltr" key="n">{license.license_number}</bdi>], [m.orders.orderNumber, <bdi dir="ltr" key="o" className="ref">{orderLabel({ id: license.order_id, order_number: license.order_number })}</bdi>], [t.type, typeLine],
-        [tp.usage, terms.usage_media.map(u => tp.usageNames[u]).join("، ")], [tp.territory, territory], [tp.deliverables, terms.deliverables.map(d => tp.deliverableNames[d]).join("، ")],
+        [tp.usage, terms.usage_media.map(u => tp.usageNames[u]).join("، ")], [tp.territory, territory], [tp.deliverables, delivered(terms.deliverables).map(d => tp.deliverableNames[d]).join("، ")],
         [tp.prohibitions, terms.prohibitions.map(p => tp.prohibitionNames[p]).join("، ") || "—"], [tp.attribution, localized(terms.attribution, locale)],
         [t.validFrom, formatDate(license.valid_from, locale)], [t.validUntil, license.valid_until ? formatDate(license.valid_until, locale) : t.noExpiry],
         ...(license.exclusive_until ? [[t.exclusiveUntil, formatDate(license.exclusive_until, locale)]] : []), [t.price, <bdi dir="ltr" key="p">{formatMoney(license.price, locale)}</bdi>], [t.issuedAt, formatDate(license.issued_at, locale)], [t.verify.link, <a key="v" href={verifyPath} data-testid="verify-url"><bdi dir="ltr" className="mono">{`${window.location.origin}${verifyPath}`}</bdi></a>],

@@ -9,6 +9,9 @@ import { useMutation } from "@/lib/use-mutation";
 import { Icon } from "./icon";
 import { inTab, notificationKind, panelOrder, panelTabs, unread, type PanelTab } from "@/lib/notification-kind";
 import { untilVisible } from "@/lib/visibility";
+import { useMaterialTitles } from "@/lib/use-material-titles";
+import { hasRole, materialReaders } from "@/lib/review";
+import { useUser } from "./session-boundary";
 
 export { inTab, panelOrder, type PanelTab };
 /**
@@ -17,7 +20,7 @@ export { inTab, panelOrder, type PanelTab };
  * كلمة نوعه ودرجة تصعيده، لا نص من الخادم.
  */
 export function NotificationsPanel({ locale, onClose }: { locale: Locale; onClose: () => void }) {
-  const m = messages[locale], t = m.shell.bell, mutation = useMutation(), bulkBefore = useRef<string | null>(null);
+  const m = messages[locale], t = m.shell.bell, mutation = useMutation(), bulkBefore = useRef<string | null>(null), me = useUser();
   const [items, setItems] = useState<Notification[] | null>(null), [failed, setFailed] = useState(false), [tab, setTab] = useState<PanelTab>("all"), [checkedAt, setCheckedAt] = useState(0), [attempt, setAttempt] = useState(0), [now, setNow] = useState(0);
   useEffect(() => {
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
@@ -37,6 +40,7 @@ export function NotificationsPanel({ locale, onClose }: { locale: Locale; onClos
   }
   const visible = items ? panelOrder(items.filter(n => inTab(n, tab))) : [];
   const count = (which: PanelTab) => items?.filter(n => inTab(n, which)).length ?? 0;
+  const titles = useMaterialTitles(visible.map(n => n.material_id), hasRole(me, ...materialReaders));
   return <section className="bell-panel" role="dialog" aria-modal="false" aria-labelledby="bell-title" data-testid="notifications-panel">
     <header className="bell-head"><h2 id="bell-title">{m.notice.title}</h2><button type="button" className="link-button" disabled={mutation.busy || !items?.some(unread)} onClick={() => void readAll()}>{t.readAll}</button></header>
     <div className="bell-tabs" role="tablist" aria-label={t.tabsLabel}>{panelTabs.map(which => <button key={which} type="button" role="tab" aria-selected={tab === which} className={tab === which ? "active" : undefined} onClick={() => setTab(which)}>{t.tabs[which]}{which === "all" && items ? <> · <span dir="ltr">{count(which)}</span></> : null}</button>)}</div>
@@ -44,9 +48,10 @@ export function NotificationsPanel({ locale, onClose }: { locale: Locale; onClos
     {failed && !items ? <p className="bell-empty" role="alert">{m.error}</p> : !items ? <ul className="bell-list" aria-busy="true">{[0, 1, 2].map(i => <li key={i} className="skeleton-row"><span className="skeleton circle" /><span className="skeleton line" /></li>)}</ul>
       : !visible.length ? <p className="bell-empty">{t.empty}</p>
       : <ul className="bell-list">{visible.map(n => { const k = notificationKind(n), href = notificationTarget(n, locale) ?? `/${locale}/notifications`;
-        return <li key={n.id} className={`bell-item ${k.word} ${unread(n) ? "unread" : ""}`} data-testid="bell-item">
-          <span className={`bell-icon ${k.word}`}><Icon name={k.icon} /></span>
-          <Link prefetch={false} href={href} onClick={onClose}><strong>{t.kinds[k.word]}</strong><span className="bell-text">{n.escalation_level ? `${m.notice.escalation}: ${n.escalation_level}` : unread(n) ? m.notice.unreadState : n.acknowledged_at || n.state === "acknowledged" ? m.notice.acknowledged : m.notice.readState}</span></Link>
+        const title = n.material_id ? titles[n.material_id] : undefined;
+        return <li key={n.id} className={`bell-item ${k.urgent ? "urgent" : k.word} ${unread(n) ? "unread" : ""}`} data-testid="bell-item">
+          <span className={`bell-icon ${k.urgent ? "urgent" : k.word}`}><Icon name={k.icon} /></span>
+          <Link prefetch={false} href={href} onClick={onClose}><strong>{t.kinds[k.word]}{k.urgent && <> <span className="badge urgent">{m.states.priority.urgent}</span></>}</strong>{title && <span className="bell-title"><bdi>{title}</bdi></span>}<span className="bell-text">{n.escalation_level ? `${m.notice.escalation}: ${n.escalation_level}` : unread(n) ? m.notice.unreadState : n.acknowledged_at || n.state === "acknowledged" ? m.notice.acknowledged : m.notice.readState}</span></Link>
           <small className="bell-time">{now ? t.ago.replace("{time}", humanDuration(now - Date.parse(n.created_at), locale)) : ""}</small></li>; })}</ul>}
     <footer className="bell-foot"><Link prefetch={false} href={`/${locale}/notifications`} onClick={onClose}>{t.all}</Link></footer>
   </section>;

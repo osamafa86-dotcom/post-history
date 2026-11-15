@@ -57,6 +57,8 @@ export function safeOrder(o: Order): Order {
     expires_at: o.expires_at, paid_at: o.paid_at ?? null, created_at: o.created_at, updated_at: o.updated_at,
   };
 }
+/** حالة الطلب كما تُعرض: المعلّق الذي مضت مهلته «منتهٍ» ولو لم يحدّثه الخادم بعد (ينتهي عنده عند أول لمس له). */
+export const shownStatus = (order: Pick<Order, "status" | "expires_at">, now: number): Order["status"] => order.status === "pending_payment" && Date.parse(order.expires_at) <= now ? "expired" : order.status;
 /** صفحة الدفع المستضافة: لا يُوجَّه المتصفح إلى أصل خارج قائمة الإعداد، ولا إلى رابط بمستخدم أو كلمة مرور، ولا يُقبل مزوّد خارج العقد. ورابط Stripe على أصل صفحته وحده وبـ https. */
 export function allowedCheckout(value: unknown, origins: readonly string[], provider: unknown = "sandbox") {
   if (typeof value !== "string" || !(checkoutProviders as readonly unknown[]).includes(provider)) return false;

@@ -8,6 +8,8 @@ import { BrandMark, Icon } from "./icon";
 import { NotificationsPanel } from "./notifications-panel";
 import { bottomItems, initials, navGroups, userLine, type NavItem } from "./workspace-nav";
 import { useCartCount } from "./store/cart";
+import { browserApi, dataOrThrow } from "@/lib/browser-api";
+import { untilVisible } from "@/lib/visibility";
 
 /** بحث الشريط العلوي (`Web/Top bar`): يصل الوارد عبر هذا السياق، فالبحث داخل الصفحة المحمّلة كما كان (العقد بلا معامل بحث). */
 const SearchContext = createContext<{ query: string; setQuery: (value: string) => void }>({ query: "", setQuery: () => {} });
@@ -66,6 +68,26 @@ function useDismiss(open: boolean, close: () => void) {
   return ref;
 }
 
+/**
+ * عدد غير المقروء على الجرس، من `unread_count` في رد التنبيهات: يُسأل كل نصف دقيقة والتبويب ظاهر، وعند إغلاق اللوحة (قد قُرئ فيها شيء).
+ * تعذّر الطلب يُبقي آخر عدد.
+ */
+function useUnreadCount(enabled: boolean, panelOpen: boolean) {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (!enabled || panelOpen) return;
+    const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      await untilVisible(controller.signal); if (controller.signal.aborted) return;
+      try { const page = dataOrThrow(await browserApi().GET("/notifications", { params: { query: { limit: 1, unread_only: true } }, signal: controller.signal })); if (!controller.signal.aborted) setCount(Math.max(0, page.unread_count)); }
+      catch { /* يبقى آخر عدد */ }
+      finally { if (!controller.signal.aborted) timer = setTimeout(poll, 30000); }
+    }
+    void poll(); return () => { controller.abort(); clearTimeout(timer); };
+  }, [enabled, panelOpen]);
+  return count;
+}
+
 /** أفعال الحساب: سطر المستخدم (اسم العمل والدور، لا بريد)، واللغة، والخروج، والخروج من كل الأجهزة. */
 export function AccountActions({ me, locale, languageHref, busy, logout, logoutAll }: { me: Me; locale: Locale; languageHref: string; busy: boolean; logout: () => void; logoutAll: () => void }) {
   const m = messages[locale];
@@ -85,6 +107,7 @@ export function AccountActions({ me, locale, languageHref, busy, logout, logoutA
 export function ShellTopBar({ me, locale, buyer, items, inboxHref, account }: { me: Me; locale: Locale; buyer: boolean; items: NavItem[]; inboxHref: string; account: React.ReactNode }) {
   const m = messages[locale], t = m.shell, router = useRouter(), { query, setQuery } = useShellSearch();
   const [bell, setBell] = useState(false), [menu, setMenu] = useState(false), [searching, setSearching] = useState(false);
+  const unread = useUnreadCount(!buyer, bell);
   const bellRef = useDismiss(bell, () => setBell(false)), menuRef = useDismiss(menu, () => setMenu(false)), onInbox = items.some(item => item.key === "inbox" && item.active);
   // البحث يعمل في الوارد؛ من لا يقرأ المواد (المالية) لا يُعرض له بحث يقود إلى صفحة لا يملكها.
   const searchable = items.some(item => item.key === "inbox");
@@ -109,7 +132,8 @@ export function ShellTopBar({ me, locale, buyer, items, inboxHref, account }: { 
     <div className="topbar-end">
       {buyer && <CartChip locale={locale} />}
       {!buyer && <div className="popover-anchor" ref={bellRef} onKeyDown={escape(bell, () => setBell(false))}>
-        <button type="button" className="icon-button" aria-label={t.bell.open} aria-expanded={bell} aria-haspopup="dialog" onClick={() => { setBell(value => !value); setMenu(false); }}><Icon name="bell" /></button>
+        <button type="button" className="icon-button bell-button" aria-label={t.bell.open} aria-describedby={unread ? "bell-unread" : undefined} aria-expanded={bell} aria-haspopup="dialog" onClick={() => { setBell(value => !value); setMenu(false); }}><Icon name="bell" />{unread > 0 && <span className="bell-count" data-testid="bell-count" dir="ltr" aria-hidden="true">{unread > 99 ? "99+" : unread}</span>}</button>
+        {unread > 0 && <span id="bell-unread" className="visually-hidden">{m.notice.unreadCount}: {unread}</span>}
         {bell && <NotificationsPanel locale={locale} onClose={() => setBell(false)} />}
       </div>}
       <div className="popover-anchor account" ref={menuRef} onKeyDown={escape(menu, () => setMenu(false))} onBlur={leave(() => setMenu(false))}>

@@ -341,7 +341,9 @@ html.board-display body { background: var(--v2-c-bg-base); }
 .tile-top { font-size: 22px; line-height: 30px; font-weight: 700; }
 .tile-age { color: var(--v2-c-text-secondary); }
 .tile-age.danger-text { color: var(--v2-c-state-danger); }
-.tile-title { font-size: 32px; line-height: 44px; font-weight: 700; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* الياء الأخيرة تنزل تحت السطر نصف حجم الخط: سطر 52 وحشو سفلي 2 يسعان نقطتيها، فلا تُقرأ «ميداني» بلا نقط. والحشو أصغر من أن يُظهر رأس
+   همزة السطر الثالث المقصوص. */
+.tile-title { font-size: 32px; line-height: 52px; padding-block-end: 2px; font-weight: 700; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .tile-meta { font-size: 20px; line-height: 28px; color: var(--v2-c-text-secondary); }
 .tile-meta.danger-text { color: var(--v2-c-state-danger); }
 .wall-empty { display: grid; justify-items: center; gap: var(--v2-space-3); padding: var(--v2-space-11) 0; text-align: center; }
@@ -457,6 +459,10 @@ html.board-display body { background: var(--v2-c-bg-base); }
 @media (hover: hover) and (pointer: fine) { .icon-button:hover { background: var(--v2-c-border-line); border-color: transparent; } }
 .avatar, .avatar:hover { background: var(--v2-c-action-soft); border-color: transparent; color: var(--v2-c-text-brand); font-family: var(--v2-font-family-num); font-size: 14px; }
 .popover-anchor { position: relative; }
+.bell-button { position: relative; }
+.bell-count { position: absolute; inset-block-start: 2px; inset-inline-end: 2px; display: grid; place-items: center; min-inline-size: 18px; block-size: 18px; padding: 0 var(--v2-space-2); border-radius: var(--v2-radius-full); background: var(--v2-c-priority-urgent); color: var(--v2-c-text-on-brand); font-size: var(--v2-font-caption-size); line-height: 1; font-weight: 700; }
+.notice-title, .bell-title { display: block; overflow-wrap: anywhere; }
+.notice-text .badge.urgent, .bell-item .badge.urgent { vertical-align: middle; }
 .account-menu, .bell-panel { position: absolute; inset-block-start: calc(100% + var(--v2-space-3)); inset-inline-end: 0; z-index: 30; min-inline-size: 260px; background: var(--v2-c-bg-raised); border: var(--v2-border-hairline) solid var(--v2-c-border-line); border-radius: var(--v2-radius-md); box-shadow: 0 16px 40px color-mix(in srgb, var(--v2-c-bg-store) 22%, transparent); }
 .account-menu { display: grid; gap: var(--v2-space-1); padding: var(--v2-space-3); }
 .account-line { margin: 0; padding: var(--v2-space-3) var(--v2-space-4) var(--v2-space-4); border-block-end: var(--v2-border-hairline) solid var(--v2-c-border-line); color: var(--v2-c-text-secondary); font-size: var(--v2-font-label-size); }

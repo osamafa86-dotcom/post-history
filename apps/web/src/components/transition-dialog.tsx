@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { browserApi } from "@/lib/browser-api";
 import { messages, type Locale } from "@/lib/i18n";
 import type { Material, Transition } from "@/lib/types";
-import { stateColumn, tracks, transitionOptions } from "@/lib/review";
+import { reasonReaches, stateColumn, tracks, transitionOptions } from "@/lib/review";
 import { reasonLimits } from "@/lib/admin-policy";
 import { timecode } from "@/lib/editor";
 import { useMutation } from "@/lib/use-mutation";
@@ -33,7 +33,7 @@ export function TransitionDialog({ locale, material, tag, editing, reload, onClo
     editing();
     if (!valid || !tag) return;
     if (to === "rejected" && !armed) { setArmed(true); return; }
-    const body: Transition = { track, to, reason: reason.trim(), ...(pin ? { note_timecode_ms: at } : {}) };
+    const body: Transition = { track, to, reason: reason.trim(), ...(pin && track === "editorial" ? { note_timecode_ms: at } : {}) };
     const ok = await mutation.run(JSON.stringify([material.id, tag, body]), header => browserApi().POST("/materials/{id}/transitions", { params: { path: { id: material.id }, header: { ...header, "If-Match": tag } }, body }));
     setArmed(false);
     if (ok) { onDone(label(to)); reload(); }
@@ -54,8 +54,10 @@ export function TransitionDialog({ locale, material, tag, editing, reload, onClo
       </fieldset>
       <label>{t.reason}<textarea aria-label={t.reason} required minLength={reasonMin} maxLength={reasonLimits.transition} value={reason} onChange={e => setReason(e.target.value)} aria-describedby="reason-help" /></label>
       <p id="reason-help" className="muted">{t.reasonHelp}</p>
-      <label className="check"><input type="checkbox" checked={pin} onChange={e => capture(e.target.checked)} />{t.pinTime}{pin && <span className="time-chip" dir="ltr">{timecode(at)}</span>}</label>
-      {to && <section className="notification-preview" aria-label={t.previewTitle}><p className="muted">{t.previewTitle}</p><p>{t.previewText.replace("{state}", label(to))}{reason.trim() && <> «<bdi>{reason.trim()}</bdi>»</>}</p></section>}
+      {track === "editorial" && <label className="check"><input type="checkbox" checked={pin} onChange={e => capture(e.target.checked)} />{t.pinTime}{pin && <span className="time-chip" dir="ltr">{timecode(at)}</span>}</label>}
+      {to && (reasonReaches(track, to)
+        ? <section className="notification-preview" data-testid="reason-reaches" aria-label={t.previewTitle}><p className="muted">{t.previewTitle}</p><p>{t.previewText.replace("{state}", label(to))}{reason.trim() && <> «<bdi>{reason.trim()}</bdi>»</>}</p></section>
+        : <p className="muted" data-testid="reason-stays">{t.reasonStays}</p>)}
       {mutation.status === 412 ? <div className="notice error" role="alert"><p>{t.changed}</p><button type="button" className="secondary" onClick={reload}>{t.reloadChanges}</button></div> : <ActionStatus status={mutation.status} locale={locale} />}
       <div className="actions"><button type="button" className="secondary" disabled={mutation.busy} onClick={close}>{m.cancel}</button>
         <button className={to === "rejected" && armed ? "danger" : ""} disabled={!valid || mutation.busy || mutation.status === 412}>{mutation.busy ? t.saving : to === "rejected" && armed ? t.confirmReject : to ? t.confirmTo.replace("{state}", label(to)) : t.apply}</button></div>

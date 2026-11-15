@@ -207,6 +207,19 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/__test/login-throttle" && req.method === "POST") { loginThrottle = Number(url.searchParams.get("seconds") ?? 30); return send({ ok: true }); }
   if (url.pathname === "/__test/auth") return send(authState());
   if (url.pathname === "/__test/passkeys-off" && req.method === "POST") { setPasskeysOff(true); return send({ ok: true }); }
+  if (url.pathname === "/__test/notices" && req.method === "POST") {
+    // تنبيهات بأنواعها (ADR 0121): ما يصل صاحب المادة (ومنه عاجل)، أو ما يصل الطاقم (مادة واردة، عاجلة، معادة، ومادة لا يقرؤها المتصل).
+    const at = (minutes: number) => new Date(Date.now() - minutes * 60000).toISOString();
+    const row = (n: number, type: string, material: string, extra: Partial<Notification> = {}): Notification => ({ id: `60000000-0000-4000-8000-0000000001${String(n).padStart(2, "0")}`, type, title: "never-display-canary", material_id: material, priority: "normal", state: "sent", created_at: at(n), ...extra } as Notification);
+    notifications.splice(0, notifications.length, ...(url.searchParams.get("for") === "reporter" ? [
+      row(1, "material.change_requested", materials[0].id, { priority: "urgent" }), row(2, "material.rejected", materials[1].id), row(3, "material.accepted", materials[2].id),
+      row(4, "upload.verified", materials[3].id), row(5, "material.acknowledged", materials[4].id), row(6, "material.published", materials[5].id),
+    ] : [
+      row(1, "material.urgent_received", materials[0].id, { priority: "urgent", assignment_state: "assigned" }), row(2, "material.created", materials[1].id, { assignment_state: "assigned" }),
+      row(3, "material.resubmitted", materials[2].id), row(4, "material.created", "2fffffff-0000-4000-8000-000000000001", { assignment_state: "assigned" }),
+    ]));
+    return send({ ok: true });
+  }
   if (url.pathname === "/__test/recovery-notice" && req.method === "POST") {
     notifications.unshift({ id: "60000000-0000-4000-8000-000000000099", type: "auth.recovery_requested", title: "never-display-canary", material_id: null, recovery_request_id: recoveryRequestId(Number(url.searchParams.get("n") ?? 1)), priority: "normal", state: "sent", created_at: new Date().toISOString() });
     return send({ ok: true });
@@ -255,6 +268,12 @@ const server = createServer(async (req, res) => {
     Object.assign(materials[10], { editorial_state: "accepted", technical_state: "failed" });                // مقبولة وفشل فني: متوقفة
     Object.assign(materials[11], { editorial_state: "in_production" }); Object.assign(materials[12], { editorial_state: "final_review" });
     Object.assign(materials[13], { editorial_state: "published" });                                          // خارج اللوحة
+    return send({ ok: true });
+  }
+  if (url.pathname === "/__test/review-load" && req.method === "POST") {
+    // تبويب «قيد المراجعة» بأكثر من صفحة: 60 اطّلع عليها و5 قيد المراجعة، فوق صفحة الحالة الواحدة (50).
+    for (let i = 20; i < 80; i++) materials[i].editorial_state = "acknowledged";
+    for (let i = 80; i < 85; i++) materials[i].editorial_state = "reviewing";
     return send({ ok: true });
   }
   if (url.pathname === "/__test/board-cap" && req.method === "POST") {

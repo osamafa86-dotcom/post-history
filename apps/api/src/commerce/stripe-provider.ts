@@ -63,6 +63,13 @@ export class StripeTestProvider implements PaymentProvider {
     return 'pending';
   }
 
+  async cancelCheckout(providerRef: string): Promise<void> {
+    // Stripe يرفض إنهاء جلسة مدفوعة أو منتهية (400) أو مجهولة (404): لا شيء يُبطَل فيها، فيمرّ بلا خطأ. وغيره خطأ يُرفع
+    await this.call('POST', `/v1/checkout/sessions/${encodeURIComponent(providerRef)}/expire`, `expire:${providerRef}`, {}).catch((err: unknown) => {
+      if (!/^stripe: (400|404) /.test((err as Error).message)) throw err;
+    });
+  }
+
   private async call<T>(method: 'GET' | 'POST', path: string, idempotencyKey?: string, form?: Record<string, string>): Promise<T> {
     const res = await this.fetchImpl(`${this.apiBase.replace(/\/$/, '')}${path}`, {
       method,

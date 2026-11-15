@@ -84,10 +84,10 @@ describe("notifications: the event type passes from the closed Outbox list only 
   it("puts orders and licences in the store tab, tasks in mine, and says each kind with an icon and a word", () => {
     expect(inTab(notice({ type: "order.status_changed" }), "store")).toBe(true); expect(inTab(notice({ type: "material.created" }), "store")).toBe(false);
     expect(inTab(notice({ assignment_id: "6f7a8b9c-0d1e-4f2a-8b3c-4d5e6f7a8b9c" }), "mine")).toBe(true);
-    expect(notificationKind(notice({ priority: "urgent", type: "order.status_changed" })).word).toBe("urgent");
-    expect(notificationKind(notice({ type: "license.revoked" }))).toEqual({ word: "store", icon: "store" });
+    expect(notificationKind(notice({ priority: "urgent", type: "order.status_changed" }))).toEqual({ word: "store", icon: "store", urgent: true });
+    expect(notificationKind(notice({ type: "license.revoked" }))).toEqual({ word: "store", icon: "store", urgent: false });
     expect(notificationKind(notice({ type: "payout.status_changed" })).word).toBe("money");
-    for (const word of ["urgent", "task", "store", "money", "upload", "update"] as const) { expect(ar.shell.bell.kinds[word]).toBeTruthy(); expect(en.shell.bell.kinds[word]).toBeTruthy(); }
+    for (const word of ["task", "store", "money", "upload", "update"] as const) { expect(ar.shell.bell.kinds[word]).toBeTruthy(); expect(en.shell.bell.kinds[word]).toBeTruthy(); }
   });
 });
 

@@ -173,7 +173,7 @@ test("A1 issues a one-time reset link after a confirmation with its effect, show
 test("A supervisor approves a recovery request from its notification with a note, sees the link once, and a second approval is refused", async ({ page, request }) => {
   await request.post(`${api}/__test/recovery-notice`); await login(page, "reviewer");
   await page.goto("/ar/notifications"); await page.getByTestId("notification").filter({ hasText: ar.shell.bell.kinds.account }).click();
-  await page.getByRole("link", { name: ar.notice.open, exact: true }).click();
+  await page.getByRole("link", { name: ar.notice.openRequest, exact: true }).click();
   await expect(page).toHaveURL(/\/ar\/recovery-requests\/70000000-0000-4000-8000-000000000001$/);
   await expect(page.getByRole("heading", { level: 1, name: ar.recovery.approve.title })).toBeVisible();
   const approve = page.getByTestId("approve-recovery"); await expect(approve).toBeDisabled();

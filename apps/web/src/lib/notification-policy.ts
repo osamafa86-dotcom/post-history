@@ -8,6 +8,20 @@ export type Rule = components["schemas"]["NotificationRule"];
 type Step = components["schemas"]["NotificationEscalationStep"];
 export const ruleEvents: RuleInput["event_type"][] = ["material.created", "material.urgent_received", "material.updated", "material.version_created", "material.technical_transition", "material.editorial_transition", "material.rights_transition", "material.acknowledged", "material.change_requested", "material.accepted_for_production", "material.reserved", "material.released", "material.contributors_set", "material.published", "upload.started", "upload.proxy_received", "upload.original_received", "upload.verified", "upload.deduplicated", "upload.failed", "ai.draft_ready"];
 export const channels: RuleInput["channels"] = ["in_app", "websocket", "apns", "fcm", "web_push", "email", "telegram", "whatsapp", "sms"];
+/** قنوات لا مرسِل لها بعد عند الخادم: القاعدة تُحفظ بها ولا يخرج منها شيء. تُعرض معطّلة بوسم «غير مفعّل بعد». */
+export const pendingChannels: RuleInput["channels"] = ["web_push", "email", "telegram", "whatsapp", "sms"];
+/**
+ * التوزيع الافتراضي عند الخادم (`apps/api/src/notifications/fanout.ts`، ADR 0121) للعرض وحده: من يصله كل حدث بلا قاعدة، وهل هو مهمة تُقرّ وتُصعَّد.
+ * `ruleable`: قاعدة الإدارة على هذا الحدث تحلّ محل هذا السطر للمواد التي تنطبق عليها.
+ */
+export const defaultFanout: readonly { event: string; audience: "supervisors" | "reporter" | "producers" | "chain"; task: boolean; ruleable: boolean }[] = [
+  { event: "material.created", audience: "supervisors", task: true, ruleable: true }, { event: "material.urgent_received", audience: "supervisors", task: true, ruleable: true },
+  { event: "material.acknowledged", audience: "reporter", task: false, ruleable: true }, { event: "material.change_requested", audience: "reporter", task: false, ruleable: true },
+  { event: "material.rejected", audience: "reporter", task: false, ruleable: false }, { event: "material.accepted", audience: "reporter", task: false, ruleable: false },
+  { event: "material.resubmitted", audience: "supervisors", task: false, ruleable: false }, { event: "material.accepted_for_production", audience: "producers", task: true, ruleable: true },
+  { event: "material.published", audience: "reporter", task: false, ruleable: true }, { event: "upload.verified", audience: "reporter", task: false, ruleable: true },
+  { event: "notification.escalated", audience: "chain", task: true, ruleable: false },
+];
 // أدوار الطاقم وحدها مستلمون؛ أدوار المشترين في عقد v0.3 لا تُعرض ولا تُقبل هنا.
 export const roles = ["system_admin", "editor_in_chief", "supervisor", "producer", "finance", "reporter", "rights_officer"] as const satisfies readonly components["schemas"]["RoleName"][];
 export type StaffRole = typeof roles[number];
