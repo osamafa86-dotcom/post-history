@@ -56,6 +56,12 @@ describe('recovery completion (/auth/recovery/complete, /auth/totp/confirm)', ()
     expect(valid(res.body) ? [] : valid.errors).toEqual([]);
     const { secret_base32, otpauth_uri } = res.body.totp_enrollment;
     expect(otpauth_uri).toContain(`secret=${secret_base32}`);
+    // اسم الجهة في تطبيق المصادقة اسم المنصة من إعداداتها، لا اسم داخلي
+    const platform = (await h.pool.query<{ platform_name: string }>(`SELECT platform_name FROM platform_settings`)).rows[0]!.platform_name;
+    const uri = new URL(otpauth_uri);
+    expect(uri.searchParams.get('issuer')).toBe(platform);
+    expect(decodeURIComponent(uri.pathname)).toContain(`${platform}:`);
+    expect(otpauth_uri).not.toContain('PostHistory');
 
     const { rows } = await h.pool.query(
       `SELECT u.totp_enabled, u.totp_secret_enc, u.totp_pending_secret_enc IS NOT NULL AS pending, u.credential_reset_required, r.completed_at IS NOT NULL AS completed

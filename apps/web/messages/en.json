@@ -456,7 +456,9 @@
     "noWorkName": "No work name",
     "noGovernorate": "No governorate office",
     "never": "Never signed in",
-    "manage": "Manage {name}'s account",
+    "manage": "Manage {name}",
+    "held": "Granted",
+    "notHeld": "Not granted",
     "empty": "No staff accounts yet",
     "emptyBody": "Accounts appear here once the server administrator adds them.",
     "emptyFiltered": "No accounts match these filters",
@@ -483,7 +485,7 @@
     "activateEffect": "{name}'s account will be active again. Earlier sessions stay revoked, so they sign in again.",
     "suspended": "Account suspended and its sessions revoked.",
     "activated": "Account active again.",
-    "permissionsHelp": "They do not come with a role; a system administrator grants them explicitly. The list does not return current grants, so the history below is the record.",
+    "permissionsHelp": "They do not come with a role; a system administrator grants them explicitly. Their state here follows the latest event in the history below.",
     "grantEffect": "{name}'s account will be granted “{permission}”, and the grant and its reason recorded in the permission history.",
     "revokeEffect": "“{permission}” will be revoked from {name}'s account, effective on its next request.",
     "granted": "“{permission}” granted.",
@@ -2395,7 +2397,8 @@
     "generateEffect": "Ten new codes are generated and every earlier code stops working at once, used or not.",
     "codesStepUpLead": "Before generating new codes we ask for your password, and the authenticator app code when it is enabled. Nothing changes until you confirm.",
     "codesOnce": "The codes are shown here once and we do not keep them. Write them down now and keep them away from this device; each code works once.",
-    "codesDone": "Saved them, close"
+    "codesDone": "Saved them, close",
+    "codesPrint": "Print the codes"
   },
   "shell": {
     "groups": {
@@ -2840,7 +2843,7 @@
     "filters": {
       "all": "All",
       "suggested": "Suggested",
-      "reporters": "From reporters"
+      "reporters": "Not suggested"
     },
     "columns": {
       "tag": "Tag",
@@ -2850,7 +2853,7 @@
       "actions": "Actions"
     },
     "sourceSuggested": "Suggested · {n}",
-    "sourceReporters": "From reporters",
+    "sourceReporters": "Not suggested",
     "neverUsed": "Never used",
     "suggest": "Suggest it",
     "suggestLabel": "Add “{tag}” to the suggestions",

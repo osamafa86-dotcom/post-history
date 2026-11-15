@@ -155,9 +155,11 @@ function BackupCodesCard({ locale }: { locale: Locale }) {
     <p className="muted">{t.codesLead}</p>
     {failed && <p className="notice error" role="alert">{m.error} <button type="button" className="quiet small" onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></p>}
     {!status && !failed && <p className="muted" role="status">{m.loading}</p>}
-    {codes ? <div className="one-time-link" data-testid="codes-once">
+    {codes ? <div className="one-time-link print-only-codes" data-testid="codes-once">
       <p className="notice" role="status">{t.codesOnce}</p>
       <ol className="backup-code-list mono" dir="ltr">{codes.codes.map(item => <li key={item}>{groupCode(item)}</li>)}</ol>
+      {/* الطباعة تخرج الرموز وحدها (`print-only-codes`)؛ لا تنزيل ملف ولا حافظة */}
+      <div className="actions no-print"><button type="button" className="secondary" data-testid="print-codes" onClick={() => window.print()}><Icon name="printer" size={16} />{t.codesPrint}</button></div>
       <div className="actions"><button type="button" className="secondary" onClick={() => setCodes(null)}>{t.codesDone}</button></div>
     </div> : status && <>
       <p data-testid="codes-status"><strong>{status.generated_at ? plural(status.remaining, t.codesLeft as PluralForms, locale) : t.codesNone}</strong>

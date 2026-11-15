@@ -5,7 +5,7 @@ import { messages, plural, type Locale, type PluralForms } from "@/lib/i18n";
 import { hasRole } from "@/lib/review";
 import { cleanText, fill, stripHidden } from "@/lib/admin-text";
 import { capabilities, editableRoles, rolesInput, roleLimits, sameRoles, staffLimits, staffReaders, staffRoles, type StaffRole, type StaffUser, type StaffUserPage } from "@/lib/staff-policy";
-import { permissions, reasonLimits } from "@/lib/admin-policy";
+import { heldPermissions, permissions, reasonLimits } from "@/lib/admin-policy";
 import { permissionLabel } from "@/lib/admin-labels";
 import type { Permission, RoleName } from "@/lib/types";
 import { useMutation } from "@/lib/use-mutation";
@@ -130,8 +130,18 @@ type Intent = { kind: "grant" | "revoke"; permission: Permission; reason: string
 function AccountView({ user, locale, onBack }: { user: StaffUser; locale: Locale; onBack: () => void }) {
   const m = messages[locale], t = m.admin, me = useUser(), mutation = useMutation();
   const [status, setStatus] = useState(user.status), [reason, setReason] = useState(""), [intent, setIntent] = useState<Intent | null>(null), [revision, setRevision] = useState(0), [done, setDone] = useState("");
-  const [roles, setRoles] = useState<RoleName[]>(user.roles);
-  const name = nameOf(user, locale), self = user.id === me.user_id, otherAdmin = !self && user.roles.includes("system_admin");
+  const [roles, setRoles] = useState<RoleName[]>(user.roles), [workNameNow, setWorkNameNow] = useState<string | null>(user.work_name ?? null);
+  // ما يحمله الحساب الآن من الصلاحيات المستقلة: من سجلها (حتى 100 حدث)، ويُعاد بعد كل منح أو سحب
+  const [held, setHeld] = useState<Record<Permission, boolean | null> | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    void browserApi().GET("/users/{id}/permissions/history", { params: { path: { id: user.id }, query: { limit: 100 } }, signal: controller.signal })
+      .then(result => { const page = dataOrThrow(result); if (!controller.signal.aborted) setHeld(heldPermissions(page.items, !page.next_cursor)); })
+      .catch(() => { if (!controller.signal.aborted) setHeld(null); });
+    return () => controller.abort();
+  }, [user.id, revision]);
+  // الاسم كما هو الآن: بعد حفظ اسم العمل يتبعه الرأس والحوارات، لا الاسم الذي فُتحت به الصفحة
+  const name = nameOf({ ...user, work_name: workNameNow }, locale), self = user.id === me.user_id, otherAdmin = !self && user.roles.includes("system_admin");
   async function apply() {
     if (!intent) return;
     const action = intent, id = user.id;
@@ -150,7 +160,7 @@ function AccountView({ user, locale, onBack }: { user: StaffUser; locale: Locale
   const effect = !intent ? "" : intent.kind === "status" ? fill(intent.status === "suspended" ? t.suspendEffect : t.activateEffect, { name }) : fill(intent.kind === "grant" ? t.grantEffect : t.revokeEffect, { name, permission: permissionLabel(intent.permission, locale) });
   return <>
     <button type="button" className="quiet back-link" onClick={onBack}><Icon name="chevron" /> {t.back}</button>
-    <div className="page-head account-head"><div className="person large"><Avatar name={user.work_name} fallback="?" /><div><h1><bdi>{name}</bdi></h1>
+    <div className="page-head account-head"><div className="person large"><Avatar name={workNameNow} fallback="?" /><div><h1><bdi>{name}</bdi></h1>
       <p className="account-meta"><RoleBadges roles={roles} locale={locale} /><StatusBadge status={status} locale={locale} /></p>
       <p className="muted">{[user.governorate, relativeTime(user.last_active_at, locale) ?? t.never].filter(Boolean).join(" · ")} · <span className="mono" dir="ltr">{user.id.slice(0, 8)}</span></p></div></div></div>
     {done && <p className="notice good" role="status">{done}</p>}
@@ -163,14 +173,18 @@ function AccountView({ user, locale, onBack }: { user: StaffUser; locale: Locale
       </section>
       <section className="card" aria-labelledby="account-permissions-title"><h2 id="account-permissions-title">{t.permissions}</h2><p className="muted">{t.permissionsHelp}</p>
         <label className="reason-field">{t.reason}<textarea maxLength={reasonLimits.permission} value={reason} disabled={mutation.busy} onChange={event => setReason(stripHidden(event.target.value))} /></label><p className="caption">{t.reasonHelp}</p>
-        <ul className="permission-list">{permissions.map(permission => <li key={permission}><article aria-label={permissionLabel(permission, locale)}><strong>{permissionLabel(permission, locale)}</strong>
-          <div className="actions"><button type="button" className="small" disabled={!reason.trim() || mutation.busy} onClick={() => ask({ kind: "grant", permission, reason: reason.trim() })}>{t.grant}</button><button type="button" className="secondary small" disabled={mutation.busy} onClick={() => ask({ kind: "revoke", permission, reason: "" })}>{t.revoke}</button></div></article></li>)}</ul>
+        <ul className="permission-list">{permissions.map(permission => { const state = held?.[permission] ?? null;
+          return <li key={permission}><article aria-label={permissionLabel(permission, locale)}><strong>{permissionLabel(permission, locale)}</strong>
+            {state !== null && <span className={`badge ${state ? "good" : ""}`} data-testid="permission-state">{state ? t.held : t.notHeld}</span>}
+            {/* زرّ واحد بحسب الحال؛ والحال المجهولة (سجل لم يُقرأ كله أو تعذّر) تعرض الزرّين كما كان */}
+            <div className="actions">{state !== true && <button type="button" className="small" disabled={!reason.trim() || mutation.busy} onClick={() => ask({ kind: "grant", permission, reason: reason.trim() })}>{t.grant}</button>}
+              {state !== false && <button type="button" className="secondary small" disabled={mutation.busy} onClick={() => ask({ kind: "revoke", permission, reason: "" })}>{t.revoke}</button>}</div></article></li>; })}</ul>
       </section>
     </div>
     <RolesCard user={user} name={name} locale={locale} onChanged={setRoles} />
     {hasRole(me, ...resetLinkIssuers) && <ResetLinkCard user={user} name={name} status={status} locale={locale} onIssued={() => { setStatus("recovery"); setRevision(n => n + 1); }} />}
-    <WorkNameEditor id={user.id} locale={locale} />
-    <PermissionHistory id={user.id} revision={revision} locale={locale} />
+    <WorkNameEditor id={user.id} locale={locale} initial={workNameNow} onSaved={setWorkNameNow} />
+    <PermissionHistory id={user.id} revision={revision} locale={locale} names={{ [user.id]: workNameNow }} />
     {intent && <ConfirmDialog locale={locale} testId="confirm-account" title={intent.kind === "status" ? (intent.status === "suspended" ? t.suspend : t.activate) : intent.kind === "grant" ? t.grant : t.revoke} confirm={t.confirm} busy={mutation.busy} status={mutation.status} danger={intent.kind === "status" && intent.status === "suspended"} onConfirm={() => void apply()} onCancel={() => setIntent(null)}>
       <p>{effect}</p>{intent.kind !== "status" && <p className="muted">{t.permissionAudit}</p>}
     </ConfirmDialog>}

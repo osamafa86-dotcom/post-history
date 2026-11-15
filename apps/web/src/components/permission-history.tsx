@@ -6,9 +6,13 @@ import { permissionLabel } from "@/lib/admin-labels";
 import { identityReasons } from "@/lib/admin-policy";
 import { uuid } from "@/lib/query";
 import type { PermissionHistoryPage } from "@/lib/types";
+import { accountName } from "@/lib/work-name";
+import { useUser } from "./session-boundary";
 
-export function PermissionHistory({ id, revision, locale }: { id: string; revision: number; locale: Locale }) {
-  const m = messages[locale], t = m.admin;
+/** `names`: أسماء عمل معروفة للصفحة (الحساب نفسه). المنفّذ: «أنت» للقارئ، ثم اسم العمل، وإلا «حساب <أول 8>»؛ لا معرّف خام. */
+export function PermissionHistory({ id, revision, locale, names = {} }: { id: string; revision: number; locale: Locale; names?: Record<string, string | null> }) {
+  const m = messages[locale], t = m.admin, me = useUser();
+  const actor = (actorId: string | null | undefined) => !actorId ? m.material.systemActor : actorId === me.user_id ? m.material.actorYou : accountName(actorId, names[actorId] ?? null, locale);
   const [loaded, setLoaded] = useState(false), [attempt, setAttempt] = useState(0), [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const [result, setResult] = useState<{ key: string; status: number; page?: PermissionHistoryPage } | null>(null);
   const cursor = cursors.at(-1), key = JSON.stringify([id, cursor, attempt, revision]);
@@ -34,7 +38,7 @@ export function PermissionHistory({ id, revision, locale }: { id: string; revisi
       return <li key={item.id}><strong>{t.historyKinds[item.kind]}</strong>
         {item.permission && <span>{permissionLabel(item.permission, locale)}</span>}
         {item.kind === "setting_changed" && item.value && <span>{t.identityTitle}: {t.accessOptions[item.value]} · {t.globalSetting}</span>}
-        <span>{formatDate(item.occurred_at, locale)} · {m.review.actor}: <bdi>{item.actor_id ?? m.notAvailable}</bdi></span>
+        <span>{formatDate(item.occurred_at, locale)} · {m.review.actor}: <bdi>{actor(item.actor_id)}</bdi></span>
         {code && <span>{t.codedReason}: {t.reasonOptions[code]}</span>}
       </li>;
     })}</ul> : <p className="empty">{t.emptyHistory}</p>)}
