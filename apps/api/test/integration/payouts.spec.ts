@@ -215,6 +215,22 @@ describe('earnings and sandbox payouts', () => {
     await post(finance1.token, `/payout-requests/${randomUUID()}/approve`).expect(404);
   });
 
+  it('splitting an amount over several requests leaves the same reserve as one request would', async () => {
+    const r = await funded(10_000n);
+    const request = (amount: number) => post(r.token, '/me/payout-requests', { amount: { amount_minor: amount, currency: 'USD' }, channel: 'sandbox' });
+    expect(await balanceOf(r.token)).toMatchObject({ available: { amount_minor: 10_000 }, reserve: { amount_minor: 1_000 }, requestable: { amount_minor: 9_000 } });
+    await request(4_000).expect(201);
+    // الاحتياطي من المتاح وما حُجز للصرف معًا: 10% من 10000، لا من الستة آلاف الباقية
+    expect(await balanceOf(r.token)).toMatchObject({ available: { amount_minor: 6_000 }, in_payout: { amount_minor: 4_000 }, reserve: { amount_minor: 1_000 }, requestable: { amount_minor: 5_000 } });
+    expect((await request(5_001).expect(422)).body.code).toBe('insufficient_available');
+    await request(5_000).expect(201);
+    const after = await balanceOf(r.token);
+    expect(after).toMatchObject({ available: { amount_minor: 1_000 }, in_payout: { amount_minor: 9_000 }, reserve: { amount_minor: 1_000 }, requestable: { amount_minor: 0 } });
+    expect((await request(1_000).expect(422)).body.code).toBe('insufficient_available');
+    // المالية تقرأ الأرصدة نفسها
+    expect((await get(finance1.token, `/users/${r.id}/earnings`).expect(200)).body.balances[0]).toEqual(after);
+  });
+
   it('two concurrent requests cannot together exceed the requestable balance', async () => {
     const r = await funded(4_000n);
     // المتاح 4000 والقابل للطلب 3600: طلبان بـ 2000 لا يمران معًا
@@ -232,6 +248,10 @@ describe('earnings and sandbox payouts', () => {
     await post(finance1.token, '/payout-policies', body).expect(403);
     await post(admin.token, '/payout-policies', { ...body, minimum: { amount_minor: 2_500, currency: 'USD' } }).expect(422);
     await post(admin.token, '/payout-policies', { ...body, reserve_bps: 6000 }).expect(422);
+    // حد أدنى صفر: رفض يسمّي الحقل، لا خطأ خادم، ولا إصدار
+    const zero = await post(admin.token, '/payout-policies', { ...body, minimum: { amount_minor: 0, currency: 'ILS' } }).expect(422);
+    expect(zero.body).toMatchObject({ code: 'validation_failed', details: { fields: ['/minimum/amount_minor'] } });
+    expect((await h.pool.query(`SELECT count(*)::int AS n FROM payout_policies WHERE currency = 'ILS' AND effective_from = $1`, [effective])).rows[0].n).toBe(0);
     const created = (await post(admin.token, '/payout-policies', body).expect(201)).body;
     const valid = schemaValidator('PayoutPolicy');
     expect(valid(created) ? [] : valid.errors).toEqual([]);
@@ -253,5 +273,56 @@ describe('earnings and sandbox payouts', () => {
     await worker.tick();
     expect((await get(r.token, `/payout-requests/${created.id}`).expect(200)).body.state).toBe('paid');
     expect(await balanceOf(r.token)).toMatchObject({ in_payout: { amount_minor: 0 }, paid: { amount_minor: 1_000 } });
+  });
+});
+
+// الاحتياطي يحمي من استرداد يأتي بعد الصرف (ADR 0031، تعديل 2026-11-15): ما صُرف خلال فترة الاسترداد يبقى في أساسه، ويخرج منه بعدها.
+describe('the payout reserve over the refund window', () => {
+  let h: Harness;
+  beforeAll(async () => {
+    h = await createHarness({
+      env: { PAYOUT_RELEASE_AFTER_DAYS: '14', PAYOUT_DEFAULT_MINIMUM_MINOR: '500', PAYOUT_DEFAULT_DUAL_APPROVAL_ABOVE_MINOR: '1000000', PAYOUT_DEFAULT_RESERVE_BPS: '1000' },
+    });
+  });
+  afterAll(() => h.close());
+
+  it('what was paid out within the refund window still counts for the reserve, and no longer after it', async () => {
+    const http = () => request(h.app.getHttpServer());
+    const as = (t: string) => ({ Authorization: `Bearer ${t}` });
+    const post = (t: string, url: string, body: object = {}) => http().post(`/v1${url}`).set(as(t)).set('Idempotency-Key', randomUUID()).send(body);
+    const balance = async (t: string) => (await http().get('/v1/me/earnings').set(as(t)).expect(200)).body.balances[0];
+    const finance = await loginAs(h, [{ role: 'finance' }]);
+    const r = await loginAs(h, [{ role: 'reporter' }]);
+    // متاح 10000 مباشرة: فترة الاسترداد هنا 14 يومًا فلا يتحرر ما بيع للتو
+    await h.app.get<Database>(DB).transaction((tx) =>
+      postEntry(tx, {
+        kind: 'sale',
+        referenceType: 'order',
+        referenceId: randomUUID(),
+        idempotencyKey: randomUUID(),
+        actorId: null,
+        postings: [
+          { account: { kind: 'provider_clearing', currency: 'USD' }, amount: money(10_000n, 'USD') },
+          { account: { kind: 'contributor_payable', ownerId: r.id, state: 'available', currency: 'USD' }, amount: money(-10_000n, 'USD') },
+        ],
+      }),
+    );
+    const created = (await post(r.token, '/me/payout-requests', { amount: { amount_minor: 9_000, currency: 'USD' }, channel: 'sandbox' }).expect(201)).body;
+    await post(finance.token, `/payout-requests/${created.id}/approve`).expect(200);
+    // اكتمال الاعتماد يوقظ العامل بلا انتظار (payouts.controller): الدورة الجارية تُنتظر هنا، ثم يُقرأ الأثر لا عدد ما صرفه نداء بعينه
+    await h.app.get(PayoutWorker).tick();
+    expect((await http().get(`/v1/payout-requests/${created.id}`).set(as(r.token)).expect(200)).body.state).toBe('paid');
+    expect(await balance(r.token)).toMatchObject({ available: { amount_minor: 1_000 }, paid: { amount_minor: 9_000 }, reserve: { amount_minor: 1_000 }, requestable: { amount_minor: 0 } });
+    expect((await post(r.token, '/me/payout-requests', { amount: { amount_minor: 500, currency: 'USD' }, channel: 'sandbox' }).expect(422)).body.code).toBe('insufficient_available');
+
+    // بعد فترة الاسترداد: وقت الصرف يُرجَع 15 يومًا (الطلب المحسوم لا يُعدَّل، فيُعطَّل حارسه في الاختبار وحده)
+    await h.pool.query(`ALTER TABLE payout_requests DISABLE TRIGGER payout_requests_guard`);
+    try {
+      await h.pool.query(`UPDATE payout_requests SET completed_at = now() - interval '15 days', requested_at = now() - interval '16 days', decided_at = now() - interval '15 days' WHERE id = $1`, [created.id]);
+    } finally {
+      await h.pool.query(`ALTER TABLE payout_requests ENABLE TRIGGER payout_requests_guard`);
+    }
+    expect(await balance(r.token)).toMatchObject({ available: { amount_minor: 1_000 }, reserve: { amount_minor: 100 }, requestable: { amount_minor: 900 } });
+    await post(r.token, '/me/payout-requests', { amount: { amount_minor: 900, currency: 'USD' }, channel: 'sandbox' }).expect(201);
   });
 });

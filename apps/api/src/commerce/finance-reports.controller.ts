@@ -7,7 +7,7 @@ import type { components } from '../generated/api';
 import { Roles } from '../identity/principal';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { type Currency, money, toContract } from './money';
-import { activePolicy, reserveOf } from './payouts';
+import { activePolicy, paidWithinRefundWindow, reserveAndRequestable } from './payouts';
 
 type ContributorEarnings = components['schemas']['ContributorEarnings'];
 type ContributorEarningsTotals = components['schemas']['ContributorEarningsTotals'];
@@ -30,7 +30,7 @@ export interface EarningsRow {
   refunded: bigint;
   shareBasisPoints: number | null;
   /** الرصيد الحالي بهذه العملة لكل حالة، موجبًا لصاحبه. */
-  balance?: { pending: bigint; available: bigint; inPayout: bigint; paid: bigint };
+  balance?: { pending: bigint; available: bigint; inPayout: bigint; paid: bigint; paidRecently: bigint };
 }
 
 /**
@@ -155,9 +155,10 @@ export class FinanceReportsService {
       FROM ledger_accounts a LEFT JOIN postings p ON p.account_id = a.id
       WHERE a.kind = 'contributor_payable' AND a.owner_id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)})
       GROUP BY a.owner_id, a.currency, a.payable_state`);
+    const recent = await paidWithinRefundWindow(this.db, this.config, ids);
     for (const r of rows) {
       const of = (state: string) => BigInt(lines.find((l) => l.owner_id === r.userId && l.currency === r.currency && l.state === state)?.total ?? '0');
-      r.balance = { pending: of('pending'), available: of('available'), inPayout: of('in_payout'), paid: of('paid') };
+      r.balance = { pending: of('pending'), available: of('available'), inPayout: of('in_payout'), paid: of('paid'), paidRecently: recent.get(`${r.userId}:${r.currency}`) ?? 0n };
     }
   }
 
@@ -233,10 +234,10 @@ export class FinanceReportsService {
   }
 }
 
-/** الرصيد بصيغة العقد بسياسة العملة، كما يحسبه `PayoutsService.summary`: الاحتياطي من المتاح، والقابل للطلب ما بعده. */
+/** الرصيد بصيغة العقد بسياسة العملة، كما يحسبه `PayoutsService.summary`: الاحتياطي والقابل للطلب بالدالة نفسها. */
 function balanceOf(r: EarningsRow, policy: Awaited<ReturnType<typeof activePolicy>>): EarningsBalance {
   const b = r.balance!;
-  const reserve = reserveOf(b.available, policy.reserveBps);
+  const { reserve, requestable } = reserveAndRequestable(b, policy.reserveBps);
   const m = (v: bigint) => toContract(money(v, r.currency));
   return {
     currency: r.currency,
@@ -245,7 +246,7 @@ function balanceOf(r: EarningsRow, policy: Awaited<ReturnType<typeof activePolic
     in_payout: m(b.inPayout),
     paid: m(b.paid),
     reserve: m(reserve),
-    requestable: m(b.available > reserve ? b.available - reserve : 0n),
+    requestable: m(requestable),
     minimum: m(policy.minimum),
   };
 }
