@@ -46,6 +46,8 @@ describe('GET /materials/{id}/files/{file_id}/download-url (v0.1)', () => {
     expect(`${url.origin}${url.pathname}`).toBe(`https://media.example.test/${h.config.S3_BUCKET_MEDIA}/${proxyKey}`);
     expect(url.searchParams.get('X-Amz-Expires')).toBe('600');
     expect(url.searchParams.get('X-Amz-Signature')).toMatch(/^[0-9a-f]{64}$/);
+    // الرابط ينزّل ولا يفتح الملف مكان الصفحة: اسم من مفتاح التخزين ومعرّف المادة، موقّع مع الرابط
+    expect(url.searchParams.get('response-content-disposition')).toBe(`attachment; filename="proxy-${materialId.replace(/-/g, '').slice(0, 8)}.mp4"`);
     const ttl = (Date.parse(res.body.expires_at) - Date.now()) / 1000;
     expect(ttl).toBeGreaterThan(590);
     expect(ttl).toBeLessThanOrEqual(600);
